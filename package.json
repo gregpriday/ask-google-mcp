@@ -9,8 +9,15 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "test": "node test/test-gemini-mcp.js",
-    "dev": "node --watch src/index.js"
+    "test": "node --test test/unit/**/*.test.js",
+    "test:integration": "node test/test-gemini-mcp.js",
+    "test:all": "npm test && npm run test:integration",
+    "dev": "node --watch src/index.js",
+    "check-env": "node scripts/check-env.js",
+    "security:audit": "npm audit",
+    "security:fix": "npm audit fix",
+    "security:update": "npm update && npm audit",
+    "prestart": "npm run check-env"
   },
   "keywords": [
     "mcp",

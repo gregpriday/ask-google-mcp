@@ -15,12 +15,12 @@ if (!apiKey) {
 }
 
 const genAI = new GoogleGenerativeAI(apiKey);
-const MODEL = "gemini-2.0-flash-exp";
+const MODEL = process.env.GEMINI_MODEL || "models/gemini-2.5-pro-latest";
 
 // Create MCP server
 const server = new Server(
   {
-    name: "gemini-search",
+    name: "ask-google",
     version: "1.0.0",
   },
   {
@@ -36,13 +36,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: "ask_google",
-        description: "Ask Google a question and get an AI-generated answer with search grounding. The model will search the internet for current information and provide a comprehensive response with sources.",
+        // Terse description + clear invocation cues
+        description:
+          "Grounded Google web research. Use when asked to 'check online', 'ask google', 'research', verify latest standards/versions, compare releases, or when current info is needed.",
         inputSchema: {
           type: "object",
+          additionalProperties: false,
           properties: {
             question: {
               type: "string",
-              description: "The question to ask Google (will be answered using Gemini 2.5 Pro with search grounding)",
+              description: "Research question to answer with grounded web search.",
+              minLength: 1,
+              maxLength: 10000,
+              examples: [
+                "Latest ECMAScript standard and new features",
+                "React 19: what's new vs 18?",
+                "Compare PostgreSQL 16 vs MySQL 8.4 for OLTP",
+                "Check online: is OpenSSL 3.3.2 out yet?",
+              ],
             },
           },
           required: ["question"],
@@ -59,8 +70,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   const question = request.params.arguments?.question;
-  if (!question || typeof question !== "string") {
-    throw new Error("Question is required and must be a string");
+
+  // Input validation
+  if (!question) {
+    throw new Error("Missing required parameter: question");
+  }
+
+  if (typeof question !== "string") {
+    throw new Error("Question must be a string");
+  }
+
+  if (question.trim().length === 0) {
+    throw new Error("Question cannot be empty");
+  }
+
+  if (question.length > 10000) {
+    throw new Error("Question exceeds maximum length of 10000 characters");
   }
 
   try {
@@ -126,10 +151,43 @@ Structure responses as actionable reference material, not tutorials.`;
       ],
     };
   } catch (error) {
-    // Enhanced error handling
+    // MCP-specific error handling with codes
     const errorMessage = error.message || "Generation failed";
-    throw new Error(`Gemini API error: ${errorMessage}`);
+    const lowerMessage = errorMessage.toLowerCase();
+
+    // Categorize errors (case-insensitive)
+    if (lowerMessage.includes("api key")) {
+      throw new Error(`[AUTH_ERROR] Invalid or missing API key: ${errorMessage}`);
+    } else if (lowerMessage.includes("quota") || lowerMessage.includes("rate limit")) {
+      throw new Error(`[QUOTA_ERROR] API quota exceeded: ${errorMessage}`);
+    } else if (lowerMessage.includes("timeout")) {
+      throw new Error(`[TIMEOUT_ERROR] Request timed out: ${errorMessage}`);
+    } else {
+      throw new Error(`[API_ERROR] Gemini API error: ${errorMessage}`);
+    }
   }
+});
+
+// Process stability handlers
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[FATAL] Unhandled Rejection at:", promise, "Reason:", reason);
+  process.exit(1);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[FATAL] Uncaught Exception:", error.message, error.stack);
+  process.exit(1);
+});
+
+// Graceful shutdown handler
+process.on("SIGINT", () => {
+  console.error("Received SIGINT, shutting down gracefully...");
+  process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+  console.error("Received SIGTERM, shutting down gracefully...");
+  process.exit(0);
 });
 
 // Start the server

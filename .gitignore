@@ -1,11 +1,15 @@
 # Dependencies
 node_modules/
-package-lock.json
+# NOTE: package-lock.json is intentionally committed per MCP best practices
+# for reproducible builds. Do NOT ignore it.
 
 # Environment variables
 .env
 .env.local
 .env.*.local
+
+# MCP configuration (contains API keys)
+.mcp.json
 
 # Logs
 logs/

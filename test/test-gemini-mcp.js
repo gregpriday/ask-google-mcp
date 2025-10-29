@@ -3,11 +3,17 @@
 /**
  * Integration test for Gemini MCP Server
  *
+ * NOTE: This test requires a real GOOGLE_API_KEY and performs actual API calls.
+ * It validates the MCP protocol handshake and tool execution end-to-end.
+ *
  * This test validates that the MCP server can:
  * 1. Start up correctly
- * 2. List available tools
- * 3. Execute the ask_google tool with a real search query
- * 4. Return properly formatted results with sources
+ * 2. Complete MCP initialization handshake (initialize -> initialized)
+ * 3. List available tools
+ * 4. Execute the ask_google tool with a real search query
+ * 5. Return properly formatted results with sources
+ *
+ * For faster unit testing without API calls, see test/unit/*.test.js
  */
 
 import { spawn } from 'child_process';
@@ -31,42 +37,69 @@ console.log('✅ GOOGLE_API_KEY loaded from .env file');
 console.log('');
 
 /**
+ * Encode a JSON-RPC message with Content-Length framing
+ */
+function encodeMessage(message) {
+  const body = Buffer.from(JSON.stringify(message), 'utf8');
+  const header = `Content-Length: ${body.length}\r\n\r\n`;
+  return Buffer.concat([Buffer.from(header, 'utf8'), body]);
+}
+
+/**
+ * Decode framed JSON-RPC messages from a buffer
+ */
+function decodeFrames(buffer) {
+  const messages = [];
+  let offset = 0;
+
+  while (true) {
+    const headerEnd = buffer.indexOf('\r\n\r\n', offset, 'utf8');
+    if (headerEnd === -1) break;
+
+    const header = buffer.toString('utf8', offset, headerEnd);
+    const match = header.match(/Content-Length:\s*(\d+)/i);
+    if (!match) break;
+
+    const length = parseInt(match[1], 10);
+    const bodyStart = headerEnd + 4;
+    const bodyEnd = bodyStart + length;
+    if (buffer.length < bodyEnd) break;
+
+    const json = JSON.parse(buffer.toString('utf8', bodyStart, bodyEnd));
+    messages.push(json);
+    offset = bodyEnd;
+  }
+  return { messages, remaining: buffer.slice(offset) };
+}
+
+/**
  * Send a JSON-RPC request to the MCP server and get response
  */
 async function sendRequest(server, request) {
   return new Promise((resolve, reject) => {
-    let responseData = '';
-    let errorData = '';
+    let responseBuffer = Buffer.alloc(0);
 
     const timeout = setTimeout(() => {
       reject(new Error('Request timeout after 30 seconds'));
     }, 30000);
 
     const dataHandler = (data) => {
-      const lines = data.toString().split('\n');
-      for (const line of lines) {
-        if (line.trim() && !line.includes('Gemini MCP server')) {
-          try {
-            const json = JSON.parse(line);
-            clearTimeout(timeout);
-            server.stdout.off('data', dataHandler);
-            resolve(json);
-          } catch (e) {
-            // Not a complete JSON yet, continue collecting
-            responseData += line;
-          }
-        }
+      responseBuffer = Buffer.concat([responseBuffer, data]);
+
+      const { messages, remaining } = decodeFrames(responseBuffer);
+      responseBuffer = remaining;
+
+      if (messages.length > 0) {
+        clearTimeout(timeout);
+        server.stdout.off('data', dataHandler);
+        resolve(messages[0]);
       }
     };
 
     server.stdout.on('data', dataHandler);
 
-    server.stderr.on('data', (data) => {
-      errorData += data.toString();
-    });
-
-    // Send the request
-    server.stdin.write(JSON.stringify(request) + '\n');
+    // Send the framed request
+    server.stdin.write(encodeMessage(request));
   });
 }
 
@@ -77,14 +110,24 @@ async function runTests() {
   console.log('🚀 Starting Gemini MCP Integration Tests\n');
   console.log('='.repeat(60));
 
-  // Start the MCP server
+  // Start the MCP server (skip npm scripts to avoid prestart hook)
   console.log('\n📡 TEST 1: Starting MCP server...');
   const server = spawn('node', ['src/index.js'], {
     env: {
       ...process.env,
-      GOOGLE_API_KEY: process.env.GOOGLE_API_KEY
+      GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
+      GEMINI_MODEL: process.env.GEMINI_MODEL || 'models/gemini-2.5-pro-latest'
     },
-    cwd: join(__dirname, '..')
+    cwd: join(__dirname, '..'),
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+
+  // Log stderr for debugging
+  server.stderr.on('data', (data) => {
+    const msg = data.toString();
+    if (!msg.includes('Gemini MCP server')) {
+      console.error('   [server stderr]:', msg.trim());
+    }
   });
 
   // Wait a bit for server to initialize
@@ -92,12 +135,47 @@ async function runTests() {
   console.log('✅ MCP server started');
 
   try {
-    // Test 1: List tools
-    console.log('\n📡 TEST 2: Listing available tools...');
-    const listResponse = await sendRequest(server, {
+    // Test 1: Initialize handshake
+    console.log('\n📡 TEST 2: Performing MCP initialization handshake...');
+
+    // Step 1: Send initialize request
+    const initResponse = await sendRequest(server, {
       jsonrpc: '2.0',
       id: 1,
-      method: 'tools/list'
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        clientInfo: {
+          name: 'ask-google-test-client',
+          version: '1.0.0'
+        },
+        capabilities: {}
+      }
+    });
+
+    if (!initResponse.result) {
+      throw new Error('No result in initialize response');
+    }
+    console.log('✅ Initialize handshake completed');
+
+    // Step 2: Send initialized notification (no response expected)
+    server.stdin.write(encodeMessage({
+      jsonrpc: '2.0',
+      method: 'initialized',
+      params: {}
+    }));
+
+    // Wait a bit for notification to be processed
+    await new Promise(resolve => setTimeout(resolve, 100));
+    console.log('✅ Initialized notification sent');
+
+    // Test 2: List tools
+    console.log('\n📡 TEST 3: Listing available tools...');
+    const listResponse = await sendRequest(server, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/list',
+      params: {}
     });
 
     if (!listResponse.result?.tools) {
@@ -111,15 +189,15 @@ async function runTests() {
 
     console.log('✅ Tools listed successfully');
     console.log(`   Found tool: ${askGoogleTool.name}`);
-    console.log(`   Description: ${askGoogleTool.description}`);
+    console.log(`   Description: ${askGoogleTool.description.substring(0, 80)}...`);
 
-    // Test 2: Ask about Springboks rugby
-    console.log('\n📡 TEST 3: Asking about South African Springboks Rugby...');
+    // Test 3: Ask about Springboks rugby
+    console.log('\n📡 TEST 4: Asking about South African Springboks Rugby...');
     console.log('   Question: "Who did the South African Springboks Rugby team play last and who won?"');
 
     const callResponse = await sendRequest(server, {
       jsonrpc: '2.0',
-      id: 2,
+      id: 3,
       method: 'tools/call',
       params: {
         name: 'ask_google',

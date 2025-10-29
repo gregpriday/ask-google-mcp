@@ -4,7 +4,8 @@ A Model Context Protocol (MCP) server that provides AI-powered Google search usi
 
 ## Features
 
-- Real-time Google search via Gemini 2.5 Pro
+- Real-time Google search via Gemini with search grounding
+- Configurable model (defaults to Gemini 2.5 Pro)
 - Search grounding with source citations
 - Optimized responses for AI agent consumption
 - Terse, structured output (bullet points, tables, code blocks)
@@ -51,32 +52,61 @@ The server runs on stdio and communicates via JSON-RPC 2.0.
 
 ### Test the Server
 
+**Unit tests**
 ```bash
 npm test
 ```
 
-This runs integration tests that validate the server functionality.
+**Integration test**
+```bash
+npm run test:integration
+```
+
+**All tests**
+```bash
+npm run test:all
+```
 
 ### Available Tools
 
 #### ask_google
 
-Ask Google a question and get an AI-generated answer with search grounding.
+Grounded Google web research (Gemini).
 
-**Parameters:**
-- `question` (string, required): The question to ask Google
+**Use when:** user says "check online", "ask google", "research"; asks for **latest standards/versions**, compares releases, or requests **up-to-date** facts.
 
-**Response:**
-- AI-synthesized answer based on current web search results
-- Source citations with URLs
-- List of search queries performed
+**Input:**
+- `question` (string, required) — the research question (1-10,000 characters)
 
-**Example:**
+**Output:**
+- Concise answer with citations
+- Source URLs
+- Search queries performed
+
+**Examples:**
 ```json
 {
   "name": "ask_google",
   "arguments": {
-    "question": "What are the latest features in React 19?"
+    "question": "Latest ECMAScript standard and new features"
+  }
+}
+```
+
+```json
+{
+  "name": "ask_google",
+  "arguments": {
+    "question": "React 19: what's new vs 18?"
+  }
+}
+```
+
+```json
+{
+  "name": "ask_google",
+  "arguments": {
+    "question": "Check online: is OpenSSL 3.3.2 out yet?"
   }
 }
 ```
@@ -156,17 +186,31 @@ The server provides structured, terse responses optimized for AI consumption:
 
 ## Development
 
+### Dependency Management
+
+This project follows MCP best practices for Node.js dependency management:
+
+- **Semver Ranges**: Dependencies use caret (`^`) ranges in `package.json` to automatically receive patch and minor security updates
+- **Lockfile**: `package-lock.json` is committed to ensure reproducible builds
+- **CI/CD**: Use `npm ci` (not `npm install`) to enforce lockfile versions in production
+- **Security**: Run `npm run security:audit` regularly and schedule `npm run security:update` for patch updates
+
 ### Project Structure
 
 ```
 ask-google/
 ├── src/
-│   └── index.js          # Main MCP server
+│   └── index.js               # Main MCP server
+├── scripts/
+│   └── check-env.js           # Environment validation
 ├── test/
-│   └── test-gemini-mcp.js # Integration tests
+│   ├── unit/
+│   │   └── tool-handler.test.js  # Unit tests
+│   └── test-gemini-mcp.js     # Integration tests
 ├── package.json
-├── .env                   # API key (git-ignored)
-├── .env.example           # API key template
+├── package-lock.json          # Committed for reproducibility
+├── .env                       # API key (git-ignored)
+├── .env.example               # API key template
 ├── .gitignore
 ├── LICENSE
 └── README.md
@@ -174,21 +218,49 @@ ask-google/
 
 ### Scripts
 
-- `npm start` - Start the MCP server
-- `npm test` - Run integration tests
+**Development:**
+- `npm start` - Start the MCP server (auto-runs environment validation)
+- `npm test` - Run unit tests
+- `npm run test:integration` - Run integration tests
+- `npm run test:all` - Run all tests (unit + integration)
 - `npm run dev` - Run server with auto-reload (Node 18+ with --watch)
+
+**Environment & Security:**
+- `npm run check-env` - Validate environment configuration
+- `npm run security:audit` - Check for security vulnerabilities
+- `npm run security:fix` - Auto-fix security issues (within semver ranges)
+- `npm run security:update` - Update dependencies and audit for vulnerabilities
 
 ## Environment Variables
 
 - `GOOGLE_API_KEY` (required) - Your Google API key for Gemini API access
+- `GEMINI_MODEL` (optional) - Gemini model to use (default: `models/gemini-2.5-pro-latest`)
+
+### Model Selection
+
+Set `GEMINI_MODEL` in your `.env` file to override the default model:
+
+```bash
+# .env
+GOOGLE_API_KEY=your_api_key_here
+GEMINI_MODEL=models/gemini-2.5-pro-latest
+```
+
+Available models:
+- `models/gemini-2.5-pro-latest` (default, best for complex reasoning)
+- `models/gemini-2.5-flash-latest` (faster, lower cost)
+- `models/gemini-flash-latest` (legacy)
 
 ## Error Handling
 
-The server provides detailed error messages:
+The server provides categorized error handling:
 
-- Missing API key: Clear error on startup
-- API errors: Formatted with status code and message
-- Invalid requests: Descriptive validation errors
+- **Input Validation**: Questions are validated for presence, type, length (max 10,000 chars)
+- **[AUTH_ERROR]**: Missing or invalid API keys
+- **[QUOTA_ERROR]**: API quota or rate limit exceeded
+- **[TIMEOUT_ERROR]**: Request timeout errors
+- **[API_ERROR]**: General API errors
+- **Process Stability**: Unhandled rejections and exceptions trigger clean shutdown
 
 ## License
 
