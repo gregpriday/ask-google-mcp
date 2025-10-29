@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.js",
   "bin": {
-    "ask-google-mcp": "./src/index.js"
+    "ask-google-mcp": "src/index.js"
   },
   "files": [
     "src/",
@@ -17,7 +17,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/gpriday/ask-google-mcp.git"
+    "url": "git+https://github.com/gpriday/ask-google-mcp.git"
   },
   "bugs": {
     "url": "https://github.com/gpriday/ask-google-mcp/issues"
