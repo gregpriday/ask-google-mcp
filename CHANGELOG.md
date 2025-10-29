@@ -1,9 +1,16 @@
 # Changelog
 
-All notable changes to the Ask Google MCP Server project are documented here.
+All notable changes to `@gpriday/ask-google-mcp` are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Changed
+- Package name changed to `@gpriday/ask-google-mcp` (scoped package)
+- README updated with global installation instructions using `npm install -g`
+- Claude Desktop integration examples updated to use `ask-google-mcp` command
 
 ## [0.1.0] - 2025-10-29
 
@@ -91,4 +98,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fixed**: Bug fixes
 - **Security**: Security improvements
 
+[Unreleased]: https://github.com/gpriday/ask-google-mcp/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/gpriday/ask-google-mcp/releases/tag/v0.1.0

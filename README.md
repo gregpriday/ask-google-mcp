@@ -18,21 +18,32 @@ A Model Context Protocol (MCP) server that provides AI-powered Google search usi
 
 ## Installation
 
-### 1. Clone or Download
+### Option 1: NPM Global Install (Recommended)
+
+Install globally from NPM:
 
 ```bash
-cd /path/to/ask-google
+npm install -g @gpriday/ask-google-mcp
 ```
 
-### 2. Install Dependencies
+The `ask-google-mcp` command will be available globally.
+
+### Option 2: Local Development Install
+
+For development or local testing:
 
 ```bash
+# Clone the repository
+git clone https://github.com/gpriday/ask-google-mcp.git
+cd ask-google-mcp
+
+# Install dependencies
 npm install
 ```
 
-### 3. Configure API Key
+### Configuration
 
-Create a `.env` file in the project root:
+Create a `.env` file in your home directory or project root:
 
 ```bash
 GOOGLE_API_KEY=your_api_key_here
@@ -44,11 +55,19 @@ You can get a Google API key from [Google AI Studio](https://aistudio.google.com
 
 ### Run the MCP Server
 
+**If installed globally:**
+```bash
+ask-google-mcp
+```
+
+**If running locally:**
 ```bash
 npm start
 ```
 
 The server runs on stdio and communicates via JSON-RPC 2.0.
+
+**Note:** When running globally, the server will look for `.env` in the current directory or use environment variables directly.
 
 ### Test the Server
 
@@ -113,10 +132,61 @@ Grounded Google web research (Gemini).
 
 ## Integration with Claude Desktop
 
-Add this server to your Claude Desktop configuration:
+Add this server to your Claude Desktop configuration.
 
-### macOS
+### If Installed Globally (Recommended)
 
+#### macOS
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "ask-google": {
+      "command": "ask-google-mcp",
+      "env": {
+        "GOOGLE_API_KEY": "your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+#### Windows
+Edit `%APPDATA%\Claude\claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "ask-google": {
+      "command": "ask-google-mcp",
+      "env": {
+        "GOOGLE_API_KEY": "your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+#### Linux
+Edit `~/.config/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "ask-google": {
+      "command": "ask-google-mcp",
+      "env": {
+        "GOOGLE_API_KEY": "your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+### If Running Locally
+
+#### macOS
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
@@ -124,7 +194,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "ask-google": {
       "command": "node",
-      "args": ["/path/to/ask-google/src/index.js"],
+      "args": ["/path/to/ask-google-mcp/src/index.js"],
       "env": {
         "GOOGLE_API_KEY": "your_api_key_here"
       }
@@ -133,8 +203,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-### Windows
-
+#### Windows
 Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 
 ```json
@@ -142,7 +211,7 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
   "mcpServers": {
     "ask-google": {
       "command": "node",
-      "args": ["C:\\path\\to\\ask-google\\src\\index.js"],
+      "args": ["C:\\path\\to\\ask-google-mcp\\src\\index.js"],
       "env": {
         "GOOGLE_API_KEY": "your_api_key_here"
       }
@@ -151,8 +220,7 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 }
 ```
 
-### Linux
-
+#### Linux
 Edit `~/.config/Claude/claude_desktop_config.json`:
 
 ```json
@@ -160,7 +228,7 @@ Edit `~/.config/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "ask-google": {
       "command": "node",
-      "args": ["/path/to/ask-google/src/index.js"],
+      "args": ["/path/to/ask-google-mcp/src/index.js"],
       "env": {
         "GOOGLE_API_KEY": "your_api_key_here"
       }
@@ -169,7 +237,7 @@ Edit `~/.config/Claude/claude_desktop_config.json`:
 }
 ```
 
-After updating the configuration, restart Claude Desktop.
+**After updating the configuration, restart Claude Desktop.**
 
 ## Response Format
 
