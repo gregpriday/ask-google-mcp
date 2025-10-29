@@ -106,13 +106,18 @@ Grounded Google web research (Gemini).
 
 **Input:**
 - `question` (string, required) — the research question (1-10,000 characters)
+- `output_file` (string, optional) — file path to save the response. Supports both absolute paths (`/Users/name/research.md`) and relative paths (`./docs/research.md`). Relative paths resolve from your project root.
+- `model` (string, optional) — Gemini model to use: `flash` (default, recommended), `flash-lite` (faster/cheaper), or `pro` (most capable)
 
 **Output:**
 - Concise answer with citations
 - Source URLs
 - Search queries performed
+- If `output_file` is provided, response is also written to the specified file
 
 **Examples:**
+
+Basic query (uses flash model by default):
 ```json
 {
   "name": "ask_google",
@@ -122,23 +127,43 @@ Grounded Google web research (Gemini).
 }
 ```
 
+With file output (relative path):
 ```json
 {
   "name": "ask_google",
   "arguments": {
-    "question": "React 19: what's new vs 18?"
+    "question": "React 19: what's new vs 18?",
+    "output_file": "./docs/react19-research.md"
   }
 }
 ```
 
+With file output (absolute path):
 ```json
 {
   "name": "ask_google",
   "arguments": {
-    "question": "Check online: is OpenSSL 3.3.2 out yet?"
+    "question": "React 19: what's new vs 18?",
+    "output_file": "/Users/john/Documents/react19-research.md"
   }
 }
 ```
+
+Using Pro model for complex queries:
+```json
+{
+  "name": "ask_google",
+  "arguments": {
+    "question": "Compare microservice patterns: event sourcing vs CQRS vs saga",
+    "model": "pro"
+  }
+}
+```
+
+**Model Selection Guide:**
+- `flash` (default) — Best for most queries. Fast, cost-effective, excellent with search grounding.
+- `flash-lite` — Use for simple factual lookups where speed is critical.
+- `pro` — Use only for complex analysis or when flash results are insufficient. Slower and more expensive.
 
 ## Integration with Claude Desktop
 
@@ -389,22 +414,15 @@ ask-google/
 ## Environment Variables
 
 - `GOOGLE_API_KEY` (required) - Your Google API key for Gemini API access
-- `GEMINI_MODEL` (optional) - Gemini model to use (default: `models/gemini-flash-latest`)
 
-### Model Selection
+## Model Selection
 
-Set `GEMINI_MODEL` in your `.env` file or environment variables to override the default model:
+The server supports three Gemini models via the `model` parameter:
+- **flash** (default) — `models/gemini-flash-latest` — Best balance of speed, cost, and quality
+- **flash-lite** — `models/gemini-flash-lite-latest` — Fastest and cheapest, good for simple queries
+- **pro** — `models/gemini-pro-latest` — Most capable but slower and more expensive
 
-```bash
-# .env
-GOOGLE_API_KEY=your_api_key_here
-GEMINI_MODEL=models/gemini-flash-latest
-```
-
-Available models:
-- `models/gemini-flash-latest` (default, cost-efficient, points to Gemini 2.5 Flash)
-- `models/gemini-2.5-flash` (stable Gemini 2.5 Flash version)
-- `models/gemini-2.5-pro-latest` (more powerful, higher cost)
+Flash is used by default and recommended for most use cases. The model can be changed per-query using the `model` parameter (see examples above).
 
 ## Error Handling
 

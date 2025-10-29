@@ -8,7 +8,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { config } from "dotenv";
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { homedir } from "os";
@@ -32,7 +32,54 @@ if (!apiKey) {
 }
 
 const genAI = new GoogleGenerativeAI(apiKey);
-const MODEL = process.env.GEMINI_MODEL || "models/gemini-flash-latest";
+
+// Retry configuration
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY = 1000; // 1 second
+
+/**
+ * Retry helper with exponential backoff
+ * @param {Function} fn - Async function to retry
+ * @param {number} maxRetries - Maximum number of retry attempts
+ * @param {number} initialDelay - Initial delay in milliseconds
+ * @returns {Promise} Result of the function
+ */
+async function retryWithBackoff(fn, maxRetries = MAX_RETRIES, initialDelay = INITIAL_RETRY_DELAY) {
+  let lastError;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+
+      // Don't retry on certain error types
+      const errorMessage = error.message || "";
+      const lowerMessage = errorMessage.toLowerCase();
+
+      // Don't retry auth errors or quota errors (permanent failures)
+      if (lowerMessage.includes("api key") ||
+          lowerMessage.includes("quota") ||
+          lowerMessage.includes("rate limit")) {
+        throw error;
+      }
+
+      // If this was the last attempt, throw the error
+      if (attempt === maxRetries) {
+        throw error;
+      }
+
+      // Calculate delay with exponential backoff
+      const delay = initialDelay * Math.pow(2, attempt);
+      console.error(`[RETRY] Attempt ${attempt + 1}/${maxRetries} failed: ${errorMessage}. Retrying in ${delay}ms...`);
+
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+}
 
 // Create MCP server
 const server = new Server(
@@ -72,6 +119,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 "Check online: is OpenSSL 3.3.2 out yet?",
               ],
             },
+            output_file: {
+              type: "string",
+              description: "Optional file path to save the response. Supports both absolute paths (/Users/name/research.md) and relative paths (./docs/research.md). Relative paths resolve from the Claude Code project root. If provided, the response will be written to this file in addition to being returned.",
+              examples: [
+                "./docs/research.md",
+                "output/gemini-response.txt",
+                "/Users/john/Documents/research.md",
+              ],
+            },
+            model: {
+              type: "string",
+              description: "Optional Gemini model to use. Choose 'flash' (default, fastest, most cost-effective), 'flash-lite' (even faster/cheaper but less capable), or 'pro' (most capable but slower/expensive). Flash is recommended for most queries.",
+              enum: ["flash", "flash-lite", "pro"],
+              default: "flash",
+              examples: ["flash", "pro", "flash-lite"],
+            },
           },
           required: ["question"],
         },
@@ -87,8 +150,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   const question = request.params.arguments?.question;
+  const outputFile = request.params.arguments?.output_file;
+  const modelType = request.params.arguments?.model || "flash";
 
-  // Input validation
+  // Input validation for question
   if (!question) {
     throw new Error("Missing required parameter: question");
   }
@@ -104,6 +169,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (question.length > 10000) {
     throw new Error("Question exceeds maximum length of 10000 characters");
   }
+
+  // Input validation for output_file (if provided)
+  if (outputFile !== undefined && outputFile !== null) {
+    if (typeof outputFile !== "string") {
+      throw new Error("output_file must be a string");
+    }
+
+    if (outputFile.trim().length === 0) {
+      throw new Error("output_file cannot be empty");
+    }
+
+    // Note: Both absolute and relative paths are supported
+    // Relative paths resolve from the Claude Code working directory (project root)
+  }
+
+  // Input validation for model
+  const validModels = ["flash", "flash-lite", "pro"];
+  if (!validModels.includes(modelType)) {
+    throw new Error(`model must be one of: ${validModels.join(", ")}. Got: ${modelType}`);
+  }
+
+  // Build the model string
+  const modelString = `models/gemini-${modelType}-latest`;
 
   try {
     // System prompt optimized for AI agent consumption
@@ -123,13 +211,15 @@ Structure responses as actionable reference material, not tutorials.`;
 
     // Get the model with search grounding
     const model = genAI.getGenerativeModel({
-      model: MODEL,
+      model: modelString,
       systemInstruction: systemPrompt,
       tools: [{ googleSearch: {} }],
     });
 
-    // Generate response with search grounding
-    const result = await model.generateContent(question);
+    // Generate response with search grounding (with retry logic)
+    const result = await retryWithBackoff(async () => {
+      return await model.generateContent(question);
+    });
     const response = result.response;
 
     // Extract grounding metadata (sources and searches performed)
@@ -157,6 +247,19 @@ Structure responses as actionable reference material, not tutorials.`;
       searches.forEach((query, idx) => {
         fullResponse += `\n${idx + 1}. "${query}"`;
       });
+    }
+
+    // Write to file if output_file was provided
+    if (outputFile) {
+      try {
+        writeFileSync(outputFile, fullResponse, "utf-8");
+        console.error(`[FILE_OUTPUT] Successfully wrote response to: ${outputFile}`);
+      } catch (fileError) {
+        // Log error but don't fail the request - the user still gets the response
+        console.error(`[FILE_OUTPUT] Failed to write to ${outputFile}: ${fileError.message}`);
+        // Append file write error to response so user knows it failed
+        fullResponse += `\n\n---\n**Note:** Failed to write to file '${outputFile}': ${fileError.message}`;
+      }
     }
 
     return {

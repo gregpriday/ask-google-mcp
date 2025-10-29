@@ -36,11 +36,6 @@ const OPTIONAL_ENV_VARS = [
     description: "Node environment (development, production, test)",
     default: "development",
   },
-  {
-    name: "GEMINI_MODEL",
-    description: "Gemini model to use for search grounding",
-    default: "models/gemini-flash-latest",
-  },
 ];
 
 function checkEnvFile() {

@@ -69,9 +69,9 @@ The server implements a **single-tool MCP server** following the stdio transport
 
 ### Gemini Model Configuration
 
-**Model selection** (src/index.js:18):
-- Default: `models/gemini-flash-latest` (points to Gemini 2.5 Flash)
-- Override via `GEMINI_MODEL` environment variable
+**Model selection** (src/index.js:36):
+- Hard-coded to `models/gemini-flash-latest` (points to Gemini 2.5 Flash)
+- Cannot be overridden - optimized for search grounding performance and cost
 - Model is configured with `systemInstruction` for AI-optimized output (terse, structured, code-focused)
 
 **Search grounding** (src/index.js:111):
@@ -84,7 +84,7 @@ The server implements a **single-tool MCP server** following the stdio transport
 **scripts/check-env.js** provides comprehensive validation:
 - Checks `.env` file existence
 - Validates `GOOGLE_API_KEY` (not placeholder, minimum length)
-- Reports optional vars (`NODE_ENV`, `GEMINI_MODEL`) with defaults
+- Reports optional vars (`NODE_ENV`) with defaults
 - Validates Node.js version against `package.json` engines requirement
 - Exits with code 1 on failure (blocks `npm start` via prestart hook)
 
@@ -141,13 +141,13 @@ Sources and search queries are **optional** (only included if grounding metadata
 - Use `package-lock.json` is committed for reproducible builds
 - CI/CD should use `npm ci` (not `npm install`)
 
-## Model String Updates
+## Model Configuration
 
-When updating the Gemini model identifier:
-- Edit `MODEL` constant in src/index.js:18
-- Current format: `models/gemini-flash-latest` (includes `models/` prefix)
-- Verify model string with Google AI Studio or ask_google tool itself
-- Update default in scripts/check-env.js:42 to match
+The server uses a hard-coded model for consistency:
+- Model: `models/gemini-flash-latest` (defined in src/index.js:36)
+- Optimized for search grounding with optimal cost/performance
+- No environment variable override - ensures consistent behavior across deployments
+- If model needs to be changed, edit the `MODEL` constant in src/index.js:36
 
 ## Release Process
 
