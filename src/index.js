@@ -7,6 +7,20 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { config } from "dotenv";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+// Load .env file if it exists (supports both local dev and global install)
+config({ override: false });
+
+// Get package version
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(
+  readFileSync(join(__dirname, "..", "package.json"), "utf-8")
+);
 
 // Initialize Gemini AI client
 const apiKey = process.env.GOOGLE_API_KEY;
@@ -21,7 +35,7 @@ const MODEL = process.env.GEMINI_MODEL || "models/gemini-flash-latest";
 const server = new Server(
   {
     name: "ask-google",
-    version: "1.0.0",
+    version: packageJson.version,
   },
   {
     capabilities: {

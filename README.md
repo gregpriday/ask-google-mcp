@@ -1,11 +1,11 @@
 # Ask Google MCP Server
 
-A Model Context Protocol (MCP) server that provides AI-powered Google search using Gemini 2.5 Pro with search grounding. This server enables Claude Desktop and other MCP clients to perform real-time web searches and get AI-synthesized answers with citations.
+A Model Context Protocol (MCP) server that provides AI-powered Google search using Gemini Flash with search grounding. This server enables Claude Desktop, Claude Code, Cursor, and other MCP clients to perform real-time web searches and get AI-synthesized answers with citations.
 
 ## Features
 
 - Real-time Google search via Gemini with search grounding
-- Configurable model (defaults to Gemini 2.5 Pro)
+- Configurable model (defaults to Gemini Flash Latest for cost-efficiency)
 - Search grounding with source citations
 - Optimized responses for AI agent consumption
 - Terse, structured output (bullet points, tables, code blocks)
@@ -239,6 +239,83 @@ Edit `~/.config/Claude/claude_desktop_config.json`:
 
 **After updating the configuration, restart Claude Desktop.**
 
+## Integration with Claude Code
+
+Claude Code uses the `claude mcp add` command to configure MCP servers.
+
+### If Installed Globally (Recommended)
+
+```bash
+claude mcp add ask-google-mcp
+```
+
+When prompted:
+- **Command**: `ask-google-mcp`
+- **Environment variables**: Add `GOOGLE_API_KEY=your_api_key_here`
+
+### If Running Locally
+
+```bash
+claude mcp add ask-google-mcp
+```
+
+When prompted:
+- **Command**: `node`
+- **Arguments**: `/path/to/ask-google-mcp/src/index.js`
+- **Environment variables**: Add `GOOGLE_API_KEY=your_api_key_here`
+
+**Verify the server is running:**
+```bash
+claude mcp list
+```
+
+## Integration with Cursor
+
+Cursor configures MCP servers through a JSON configuration file.
+
+### If Installed Globally (Recommended)
+
+1. Open Cursor Settings (⚙️ icon)
+2. Select the `MCP` tab
+3. Click `Add a new global MCP server`
+4. Edit `~/.cursor/mcp.json` (or `.cursor/mcp.json` in your home directory):
+
+```json
+{
+  "mcpServers": {
+    "ask-google": {
+      "command": "ask-google-mcp",
+      "env": {
+        "GOOGLE_API_KEY": "your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+### If Running Locally
+
+1. Open Cursor Settings (⚙️ icon)
+2. Select the `MCP` tab
+3. Click `Add a new global MCP server` or create `.cursor/mcp.json` in your project root
+4. Add the following configuration:
+
+```json
+{
+  "mcpServers": {
+    "ask-google": {
+      "command": "node",
+      "args": ["/path/to/ask-google-mcp/src/index.js"],
+      "env": {
+        "GOOGLE_API_KEY": "your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+**Verify the server:** Return to the Cursor MCP settings tab to confirm the server is installed and its tools are available.
+
 ## Response Format
 
 The server provides structured, terse responses optimized for AI consumption:
@@ -302,22 +379,22 @@ ask-google/
 ## Environment Variables
 
 - `GOOGLE_API_KEY` (required) - Your Google API key for Gemini API access
-- `GEMINI_MODEL` (optional) - Gemini model to use (default: `models/gemini-2.5-pro-latest`)
+- `GEMINI_MODEL` (optional) - Gemini model to use (default: `models/gemini-flash-latest`)
 
 ### Model Selection
 
-Set `GEMINI_MODEL` in your `.env` file to override the default model:
+Set `GEMINI_MODEL` in your `.env` file or environment variables to override the default model:
 
 ```bash
 # .env
 GOOGLE_API_KEY=your_api_key_here
-GEMINI_MODEL=models/gemini-2.5-pro-latest
+GEMINI_MODEL=models/gemini-flash-latest
 ```
 
 Available models:
-- `models/gemini-2.5-pro-latest` (default, best for complex reasoning)
-- `models/gemini-2.5-flash-latest` (faster, lower cost)
-- `models/gemini-flash-latest` (legacy)
+- `models/gemini-flash-latest` (default, cost-efficient, points to Gemini 2.5 Flash)
+- `models/gemini-2.5-flash` (stable Gemini 2.5 Flash version)
+- `models/gemini-2.5-pro-latest` (more powerful, higher cost)
 
 ## Error Handling
 

@@ -52,9 +52,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@modelcontextprotocol/sdk": "^1.0.4"
-  },
-  "devDependencies": {
-    "dotenv": "^16.4.5"
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "dotenv": "^16.6.1"
   }
 }

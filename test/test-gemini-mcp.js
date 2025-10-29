@@ -241,14 +241,17 @@ async function runTests() {
     console.log('🎉 ALL TESTS PASSED!');
     console.log('='.repeat(60));
 
+    // Clean up and exit successfully
+    server.kill();
+    process.exit(0);
+
   } catch (error) {
     console.error('\n❌ TEST FAILED:', error.message);
     console.error(error.stack);
-    process.exit(1);
-  } finally {
-    // Clean up
+
+    // Clean up and exit with failure
     server.kill();
-    process.exit(0);
+    process.exit(1);
   }
 }
 

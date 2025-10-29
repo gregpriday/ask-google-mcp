@@ -39,23 +39,18 @@ const OPTIONAL_ENV_VARS = [
   {
     name: "GEMINI_MODEL",
     description: "Gemini model to use for search grounding",
-    default: "models/gemini-2.5-pro-latest",
+    default: "models/gemini-flash-latest",
   },
 ];
 
 function checkEnvFile() {
   const envPath = join(projectRoot, ".env");
-  const envExamplePath = join(projectRoot, ".env.example");
 
   console.log("🔍 Checking environment configuration...\n");
 
   // Check if .env file exists
   if (!existsSync(envPath)) {
-    console.error("❌ ERROR: .env file not found");
-    console.error("\n📝 Remediation:");
-    console.error(`   1. Copy the example file: cp ${envExamplePath} ${envPath}`);
-    console.error("   2. Edit .env and add your actual API keys");
-    return false;
+    return false; // Return false to indicate no file
   }
 
   console.log("✅ .env file exists");
@@ -64,6 +59,11 @@ function checkEnvFile() {
 
 function loadEnvFile() {
   const envPath = join(projectRoot, ".env");
+
+  // If .env doesn't exist, return empty object (will fall back to process.env)
+  if (!existsSync(envPath)) {
+    return {};
+  }
 
   try {
     const envContent = readFileSync(envPath, "utf-8");
@@ -87,7 +87,7 @@ function loadEnvFile() {
   }
 }
 
-function validateRequiredVars(envVars) {
+function validateRequiredVars(envVars, hasEnvFile) {
   console.log("\n🔐 Validating required environment variables...\n");
 
   let allValid = true;
@@ -98,7 +98,13 @@ function validateRequiredVars(envVars) {
     if (!value) {
       console.error(`❌ ${envVar.name}: MISSING`);
       console.error(`   Description: ${envVar.description}`);
-      console.error(`   Remediation: ${envVar.remediation}\n`);
+      console.error(`   Remediation: ${envVar.remediation}`);
+
+      // Only suggest .env file if it doesn't exist
+      if (!hasEnvFile) {
+        console.error(`   Or: Create a .env file with ${envVar.name}=your_value`);
+      }
+      console.error("");
       allValid = false;
       continue;
     }
@@ -179,26 +185,23 @@ function main() {
 
   let success = true;
 
-  // Step 1: Check .env file exists
-  if (!checkEnvFile()) {
-    success = false;
-  }
+  // Step 1: Check if .env file exists
+  const hasEnvFile = checkEnvFile();
 
-  // Step 2: Load environment variables
+  // Step 2: Load environment variables from file (or empty object)
   const envVars = loadEnvFile();
-  if (!envVars) {
+  if (envVars === null) {
+    // Only fail if file exists but couldn't be read
     success = false;
   }
 
-  // Step 3: Validate required variables
-  if (envVars && !validateRequiredVars(envVars)) {
+  // Step 3: Validate required variables (from file or process.env)
+  if (!validateRequiredVars(envVars || {}, hasEnvFile)) {
     success = false;
   }
 
   // Step 4: Check optional variables
-  if (envVars) {
-    checkOptionalVars(envVars);
-  }
+  checkOptionalVars(envVars || {});
 
   // Step 5: Check Node.js version
   if (!checkNodeVersion()) {
