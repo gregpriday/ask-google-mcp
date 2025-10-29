@@ -1,6 +1,6 @@
 # Ask Google MCP Server
 
-A Model Context Protocol (MCP) server that provides AI-powered Google search using Gemini Flash with search grounding. This server enables Claude Desktop, Claude Code, Cursor, and other MCP clients to perform real-time web searches and get AI-synthesized answers with citations.
+A Model Context Protocol (MCP) server that provides AI-powered Google search using Gemini Flash with search grounding. This server enables Claude Desktop, Claude Code, and other MCP clients to perform real-time web searches and get AI-synthesized answers with citations.
 
 ## Features
 
@@ -13,7 +13,7 @@ A Model Context Protocol (MCP) server that provides AI-powered Google search usi
 
 ## Prerequisites
 
-- Node.js >= 18.0.0
+- Node.js >= 20.0.0 (Node.js 18.x reached End-of-Life April 2025)
 - Google API Key with Gemini API access
 
 ## Installation
@@ -43,13 +43,23 @@ npm install
 
 ### Configuration
 
-Create a `.env` file in your home directory or project root:
+Create a `.env` file in your project root or home directory (`~/.env`):
 
 ```bash
 GOOGLE_API_KEY=your_api_key_here
 ```
 
 You can get a Google API key from [Google AI Studio](https://aistudio.google.com/apikey).
+
+**For local development**, validate your configuration with:
+```bash
+npm run check-env
+```
+
+The server will automatically load `.env` from:
+1. Current working directory (`.env`)
+2. Home directory (`~/.env`) as fallback
+3. Or use environment variables directly
 
 ## Usage
 
@@ -241,80 +251,80 @@ Edit `~/.config/Claude/claude_desktop_config.json`:
 
 ## Integration with Claude Code
 
-Claude Code uses the `claude mcp add` command to configure MCP servers.
+Add the MCP server using the `claude mcp add` command.
 
 ### If Installed Globally (Recommended)
 
+**For current project only:**
 ```bash
-claude mcp add ask-google-mcp
+claude mcp add --scope project ask-google -e GOOGLE_API_KEY=your_api_key_here -- ask-google-mcp
 ```
 
-When prompted:
-- **Command**: `ask-google-mcp`
-- **Environment variables**: Add `GOOGLE_API_KEY=your_api_key_here`
+**For your user (available in all projects):**
+```bash
+claude mcp add --scope user ask-google -e GOOGLE_API_KEY=your_api_key_here -- ask-google-mcp
+```
+
+**For local directory:**
+```bash
+claude mcp add --scope local ask-google -e GOOGLE_API_KEY=your_api_key_here -- ask-google-mcp
+```
 
 ### If Running Locally
 
+**For current project:**
 ```bash
-claude mcp add ask-google-mcp
+claude mcp add --scope project ask-google -e GOOGLE_API_KEY=your_api_key_here -- node /path/to/ask-google-mcp/src/index.js
 ```
-
-When prompted:
-- **Command**: `node`
-- **Arguments**: `/path/to/ask-google-mcp/src/index.js`
-- **Environment variables**: Add `GOOGLE_API_KEY=your_api_key_here`
 
 **Verify the server is running:**
 ```bash
 claude mcp list
 ```
 
-## Integration with Cursor
+## Integration with OpenAI Codex
 
-Cursor configures MCP servers through a JSON configuration file.
+**Note:** This refers to the **OpenAI Codex CLI** (released April 2025), a terminal-based coding agent with MCP support. This is different from the deprecated "OpenAI Codex" model from 2021-2023.
 
-### If Installed Globally (Recommended)
+Add the MCP server using the `codex mcp add` command or by editing the `~/.codex/config.toml` file.
 
-1. Open Cursor Settings (⚙️ icon)
-2. Select the `MCP` tab
-3. Click `Add a new global MCP server`
-4. Edit `~/.cursor/mcp.json` (or `.cursor/mcp.json` in your home directory):
+### Using CLI (Recommended)
 
-```json
-{
-  "mcpServers": {
-    "ask-google": {
-      "command": "ask-google-mcp",
-      "env": {
-        "GOOGLE_API_KEY": "your_api_key_here"
-      }
-    }
-  }
-}
+**If installed globally:**
+```bash
+codex mcp add ask-google --env GOOGLE_API_KEY=your_api_key_here -- ask-google-mcp
 ```
 
-### If Running Locally
-
-1. Open Cursor Settings (⚙️ icon)
-2. Select the `MCP` tab
-3. Click `Add a new global MCP server` or create `.cursor/mcp.json` in your project root
-4. Add the following configuration:
-
-```json
-{
-  "mcpServers": {
-    "ask-google": {
-      "command": "node",
-      "args": ["/path/to/ask-google-mcp/src/index.js"],
-      "env": {
-        "GOOGLE_API_KEY": "your_api_key_here"
-      }
-    }
-  }
-}
+**If running locally:**
+```bash
+codex mcp add ask-google --env GOOGLE_API_KEY=your_api_key_here -- node /path/to/ask-google-mcp/src/index.js
 ```
 
-**Verify the server:** Return to the Cursor MCP settings tab to confirm the server is installed and its tools are available.
+**Verify the server:**
+```bash
+codex mcp list
+```
+
+### Manual Configuration
+
+Edit `~/.codex/config.toml`:
+
+**If installed globally:**
+```toml
+[mcp.ask-google]
+command = "ask-google-mcp"
+env = ["GOOGLE_API_KEY=your_api_key_here"]
+```
+
+**If running locally:**
+```toml
+[mcp.ask-google]
+command = "node"
+args = ["/path/to/ask-google-mcp/src/index.js"]
+env = ["GOOGLE_API_KEY=your_api_key_here"]
+```
+
+**Note:** Restart Codex CLI or IDE extension after editing `config.toml` for changes to take effect.
 
 ## Response Format
 

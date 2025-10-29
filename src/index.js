@@ -11,9 +11,12 @@ import { config } from "dotenv";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { homedir } from "os";
 
 // Load .env file if it exists (supports both local dev and global install)
-config({ override: false });
+// First try CWD, then fallback to home directory (won't override existing env)
+config({ path: join(process.cwd(), ".env") });
+config({ path: join(homedir(), ".env") });
 
 // Get package version
 const __filename = fileURLToPath(import.meta.url);
