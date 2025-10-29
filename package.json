@@ -1,6 +1,6 @@
 {
   "name": "@gpriday/ask-google-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A Model Context Protocol (MCP) server that provides AI-powered Google search using Gemini 2.5 Pro with search grounding",
   "type": "module",
   "main": "src/index.js",
