@@ -1,158 +1,164 @@
 ---
-description: Prepare and publish a new release version to NPM
+description: Fully automated NPM release with version detection
+argument-hint: [patch|minor|major] (optional - auto-detected if omitted)
+allowed-tools:
+  - Bash(npm test:*)
+  - Bash(npm pack:*)
+  - Bash(npm whoami:*)
+  - Bash(npm publish:*)
+  - Bash(npm view:*)
+  - Bash(git status:*)
+  - Bash(git add:*)
+  - Bash(git commit:*)
+  - Bash(git tag:*)
+  - Bash(git push:*)
+  - Bash(git branch:*)
+  - Bash(git log:*)
+  - Bash(git describe:*)
+  - Bash(git diff:*)
+  - Bash(node:*)
+  - Read
+  - Edit
+  - Write
 ---
 
-# Release Process for ask-google-mcp
+# Automated NPM Release for @gpriday/ask-google-mcp
 
-You are tasked with preparing and publishing a new release of the `@gpriday/ask-google-mcp` package to NPM. Follow these steps carefully:
+## Current State
+- Git status: !`git status`
+- Current branch: !`git branch --show-current`
+- Latest tag: !`git describe --tags --abbrev=0 2>/dev/null || echo "none"`
+- Current version: !`node -p "require('./package.json').version"`
+- NPM user: !`npm whoami`
+- Changes since last tag: !`git log $(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD")..HEAD --oneline 2>/dev/null || echo "No previous tags"`
 
-## Pre-Release Checklist
+## Automated Release Process
 
-1. **Verify Git Status**
-   - Check current branch (should be `main`)
-   - Ensure working directory is clean or only has expected changes
-   - Verify all tests pass: `npm test`
+**IMPORTANT:** This command will automatically:
+1. Analyze commit history to determine version bump type
+2. Run all tests (STOP if any fail)
+3. Update package.json version
+4. Commit changes
+5. Create git tag
+6. Publish to NPM
+7. Push to origin
 
-2. **Determine Version Type**
-   - Ask the user what type of release this is:
-     - **patch** (0.1.0 → 0.1.1): Bug fixes, minor updates
-     - **minor** (0.1.0 → 0.2.0): New features, backwards compatible
-     - **major** (0.1.0 → 1.0.0): Breaking changes
-   - If the user doesn't specify, infer from recent commits
+### Step 1: Analyze Changes & Determine Version
 
-3. **Update Version Number**
-   - Update `version` in `package.json`
-   - Follow semantic versioning (semver)
+Version bump override: $ARGUMENTS
 
-4. **Update CHANGELOG.md**
-   - Move "Unreleased" section to new version with today's date
-   - Format: `## [X.Y.Z] - YYYY-MM-DD`
-   - Categorize changes under:
-     - **Added** - New features
-     - **Changed** - Changes to existing functionality
-     - **Deprecated** - Soon-to-be removed features
-     - **Removed** - Removed features
-     - **Fixed** - Bug fixes
-     - **Security** - Security improvements
-   - Update version links at bottom of CHANGELOG
+**If $ARGUMENTS is empty, auto-detect version bump:**
 
-5. **Review Package Contents**
-   - Run `npm pack --dry-run` to preview what will be published
-   - Verify only intended files are included:
-     - `src/`
-     - `scripts/`
-     - `README.md`
-     - `LICENSE`
-     - `CHANGELOG.md`
-     - `.env.example`
+Read all commits since the last git tag. Analyze commit messages following Conventional Commits:
+- **MAJOR** (breaking): Look for "BREAKING CHANGE:", "!" after type (e.g., "feat!:"), or "major:" prefix
+- **MINOR** (feature): Look for "feat:", "feature:", new functionality
+- **PATCH** (fix): Look for "fix:", "bugfix:", "chore:", "docs:", "refactor:", "test:", "style:", improvements
 
-6. **Run All Tests**
-   - Unit tests: `npm test`
-   - Verify all tests pass (currently 37 tests)
-   - If tests fail, STOP and report issues to user
+Rules:
+- If any BREAKING CHANGE found → MAJOR bump
+- If any feat/feature found (no breaking) → MINOR bump
+- Otherwise → PATCH bump
+- If no commits since last tag → Ask user if they want to proceed with PATCH
 
-7. **Verify Package Metadata**
-   - Package name: `@gpriday/ask-google-mcp`
-   - Author: `Greg Priday <greg@siteorigin.com>`
-   - License: `MIT`
-   - Repository URLs are correct
-   - Keywords are appropriate
+Calculate new version based on current package.json version and bump type.
 
-## Release Steps
+### Step 2: Pre-Release Validation
 
-8. **Commit Release Changes**
-   ```bash
-   git add package.json CHANGELOG.md
-   git commit -m "chore: prepare for vX.Y.Z release"
-   ```
+1. **Check for Uncommitted Changes**
+   - Run `git status --porcelain`
+   - If ANY uncommitted changes exist (modified, untracked, or staged files):
+     - List all uncommitted changes
+     - STOP release process
+     - Tell user: "Please commit or stash all changes before running release. The release process will only commit the version bump in package.json."
+     - Do NOT proceed with any release steps
 
-9. **Create Git Tag**
-   ```bash
-   git tag -a vX.Y.Z -m "Release version X.Y.Z
+2. **Verify Prerequisites**
+   - Must be on `main` branch (STOP if not)
+   - Run `npm test` - all tests must pass (STOP if any fail)
+   - Run `npm pack --dry-run` to preview package
 
-   [Brief summary of main changes from CHANGELOG]"
-   ```
+3. **Verify NPM Authentication**
+   - Check `npm whoami` returns "gpriday"
+   - If not authenticated, STOP and tell user to run `npm login`
 
-10. **Publish to NPM**
-    ```bash
-    npm publish --access public
-    ```
+### Step 3: Update Files Automatically
 
-    **IMPORTANT:**
-    - The package is scoped (`@gpriday/`), so `--access public` is required
-    - Verify you're logged in as `gpriday`: `npm whoami`
-    - If not logged in: `npm login`
+1. **Update package.json**
+   - Read current package.json
+   - Update `version` field to new calculated version
+   - Write back to file
 
-11. **Push to Git**
-    ```bash
-    git push origin main
-    git push origin vX.Y.Z
-    ```
+### Step 4: Commit & Tag
 
-12. **Verify Publication**
-    - Check NPM: `npm view @gpriday/ask-google-mcp`
-    - Verify version number is correct
-    - Test installation: `npm install -g @gpriday/ask-google-mcp@X.Y.Z`
+Execute these commands sequentially:
 
-## Post-Release
+```bash
+git add package.json
+git commit -m "chore: prepare for v[NEW_VERSION] release"
+git tag -a v[NEW_VERSION] -m "Release version [NEW_VERSION]
 
-13. **Create GitHub Release** (if GitHub repo exists)
-    - Go to: https://github.com/gpriday/ask-google-mcp/releases/new
-    - Tag version: `vX.Y.Z`
-    - Title: `Release X.Y.Z`
-    - Description: Copy from CHANGELOG.md
-    - Mark as "latest release"
+[First 3-5 key changes from commit history]"
+```
 
-14. **Prepare for Next Development**
-    - Add "Unreleased" section to CHANGELOG.md:
-      ```markdown
-      ## [Unreleased]
+### Step 5: Publish to NPM
 
-      ### Added
+```bash
+npm publish --access public
+```
 
-      ### Changed
+**CRITICAL**: `--access public` is required for scoped package `@gpriday/ask-google-mcp`
 
-      ### Fixed
-      ```
+### Step 6: Push to Git
 
-15. **Report to User**
-    - Summarize what was done
-    - Provide NPM package URL
-    - Provide installation command
-    - List key changes from CHANGELOG
+```bash
+git push origin main
+git push origin v[NEW_VERSION]
+```
+
+### Step 7: Verify & Report
+
+Run verification:
+```bash
+npm view @gpriday/ask-google-mcp version
+```
+
+**Report to user:**
+- ✅ Version published: [NEW_VERSION]
+- ✅ NPM: https://www.npmjs.com/package/@gpriday/ask-google-mcp
+- ✅ Install: `npm install -g @gpriday/ask-google-mcp`
+- ✅ Git tagged and pushed
+- **Key changes in this release:**
+  [List 5-7 main changes from commit history since last tag]
 
 ## Error Handling
 
-If any step fails:
-- **Tests fail**: Report failures, do not proceed with release
-- **Git is dirty**: Ask user if they want to commit changes first
-- **NPM publish fails**: Check if version already exists, verify login
-- **Git push fails**: Check remote access, verify branch is up to date
+**If tests fail:**
+- Report which tests failed
+- STOP release process
+- Tell user to fix tests first
 
-## Important Notes
+**If git has uncommitted changes:**
+- List all uncommitted files
+- Tell user: "Please commit or stash all changes before running release"
+- Explain: "The release process will only commit the version bump in package.json"
+- STOP release process
 
-- **Never publish without running tests**
-- **Never skip version bump in package.json**
-- **Always update CHANGELOG.md**
-- **Always create Git tag**
-- **The package name is `@gpriday/ask-google-mcp` (scoped)**
-- **The binary command is `ask-google-mcp`**
-- **Minimum Node.js version: >=18.0.0**
+**If NPM publish fails:**
+- Check if version already exists on NPM
+- Check NPM authentication
+- Report specific error
+- STOP (git tag already created, user may need to delete tag)
 
-## Success Criteria
+**If git push fails:**
+- Check remote access
+- Verify branch is up to date
+- Note: Package is already published to NPM
+- User may need to force push or resolve conflicts
 
-A successful release includes:
-1. ✅ All tests passing
-2. ✅ Version bumped in package.json
-3. ✅ CHANGELOG updated with release notes
-4. ✅ Git commit created
-5. ✅ Git tag created
-6. ✅ Published to NPM
-7. ✅ Pushed to Git remote
-8. ✅ Verified on NPM registry
+## Package Details
 
-After completing all steps, provide the user with:
-- NPM package URL: `https://www.npmjs.com/package/@gpriday/ask-google-mcp`
-- Installation command: `npm install -g @gpriday/ask-google-mcp`
-- Version published
-- Summary of changes from CHANGELOG
+- Package: `@gpriday/ask-google-mcp`
+- Binary: `ask-google-mcp`
+- License: MIT
+- Minimum Node: >=18.0.0
+- Scope: @gpriday (requires --access public)

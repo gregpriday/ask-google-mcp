@@ -15,7 +15,7 @@ if (!apiKey) {
 }
 
 const genAI = new GoogleGenerativeAI(apiKey);
-const MODEL = process.env.GEMINI_MODEL || "models/gemini-2.5-pro-latest";
+const MODEL = process.env.GEMINI_MODEL || "models/gemini-flash-latest";
 
 // Create MCP server
 const server = new Server(
