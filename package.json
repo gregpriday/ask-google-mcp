@@ -1,0 +1,37 @@
+{
+  "name": "ask-google-mcp",
+  "version": "1.0.0",
+  "description": "A Model Context Protocol (MCP) server that provides AI-powered Google search using Gemini 2.5 Pro with search grounding",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "ask-google-mcp": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node test/test-gemini-mcp.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "gemini",
+    "google",
+    "search",
+    "ai",
+    "llm",
+    "claude"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5"
+  }
+}
