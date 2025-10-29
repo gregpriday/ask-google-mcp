@@ -1,12 +1,28 @@
 {
   "name": "ask-google-mcp",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "A Model Context Protocol (MCP) server that provides AI-powered Google search using Gemini 2.5 Pro with search grounding",
   "type": "module",
   "main": "src/index.js",
   "bin": {
     "ask-google-mcp": "./src/index.js"
   },
+  "files": [
+    "src/",
+    "scripts/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    ".env.example"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gpriday/ask-google-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gpriday/ask-google-mcp/issues"
+  },
+  "homepage": "https://github.com/gpriday/ask-google-mcp#readme",
   "scripts": {
     "start": "node src/index.js",
     "test": "node --test test/unit/**/*.test.js",
@@ -29,7 +45,7 @@
     "llm",
     "claude"
   ],
-  "author": "",
+  "author": "Greg Priday <greg@siteorigin.com>",
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
