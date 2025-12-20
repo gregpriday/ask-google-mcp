@@ -130,10 +130,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             model: {
               type: "string",
-              description: "Optional Gemini model to use. Choose 'flash' (default, fastest, most cost-effective), 'flash-lite' (even faster/cheaper but less capable), or 'pro' (most capable but slower/expensive). Flash is recommended for most queries.",
-              enum: ["flash", "flash-lite", "pro"],
+              description: "Optional Gemini model to use. Choose 'flash' (default) for most information lookup queries, or 'pro' when you need to search and perform advanced reasoning over the results.",
+              enum: ["flash", "pro"],
               default: "flash",
-              examples: ["flash", "pro", "flash-lite"],
+              examples: ["flash", "pro"],
             },
           },
           required: ["question"],
@@ -185,13 +185,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   // Input validation for model
-  const validModels = ["flash", "flash-lite", "pro"];
+  const validModels = ["flash", "pro"];
   if (!validModels.includes(modelType)) {
     throw new Error(`model must be one of: ${validModels.join(", ")}. Got: ${modelType}`);
   }
 
   // Build the model string
-  const modelString = `models/gemini-${modelType}-latest`;
+  const modelMap = {
+    "flash": "gemini-3-flash-preview",
+    "pro": "gemini-3-pro-preview",
+  };
+  const modelString = modelMap[modelType];
 
   try {
     // System prompt optimized for AI agent consumption
