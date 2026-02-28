@@ -25,10 +25,36 @@ const packageJson = JSON.parse(
   readFileSync(join(__dirname, "..", "package.json"), "utf-8")
 );
 
+// Handle --help and --version before requiring API key
+const args = process.argv.slice(2);
+if (args.includes("--help") || args.includes("-h")) {
+  console.log(`${packageJson.name} v${packageJson.version}`);
+  console.log(`\n${packageJson.description}\n`);
+  console.log("Usage: ask-google-mcp\n");
+  console.log("This is an MCP server that communicates over stdio.");
+  console.log("It is intended to be used as a tool provider for MCP-compatible clients.\n");
+  console.log("Environment variables:");
+  console.log("  GOOGLE_API_KEY    Google AI API key (required)\n");
+  console.log("Options:");
+  console.log("  -h, --help        Show this help message");
+  console.log("  -v, --version     Show version number");
+  process.exit(0);
+}
+
+if (args.includes("--version") || args.includes("-v")) {
+  console.log(packageJson.version);
+  process.exit(0);
+}
+
 // Initialize Gemini AI client
 const apiKey = process.env.GOOGLE_API_KEY;
 if (!apiKey) {
-  throw new Error("GOOGLE_API_KEY environment variable is required");
+  console.error("Error: GOOGLE_API_KEY environment variable is required.\n");
+  console.error("To get a key, visit: https://aistudio.google.com/apikey");
+  console.error("Then set it in your environment:\n");
+  console.error("  export GOOGLE_API_KEY=your_api_key_here\n");
+  console.error(`For more help, visit: ${packageJson.homepage}`);
+  process.exit(1);
 }
 
 const genAI = new GoogleGenerativeAI(apiKey);
