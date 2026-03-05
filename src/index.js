@@ -126,28 +126,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: "ask_google",
-        // Terse description + clear invocation cues
         description:
-          "Grounded Google web research. Use when asked to 'check online', 'ask google', 'research', verify latest standards/versions, compare releases, or when current info is needed.",
+          "Grounded Google web research for current/latest info, version checks, and comparisons. Short or long questions; prefer 'current/latest' over hardcoding years.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
           properties: {
             question: {
               type: "string",
-              description: "Research question to answer with grounded web search.",
+              description: "Grounded web-search query. Can be a short lookup or long-form, multi-part research request. Prefer 'current/latest/as of today' over hardcoding dates unless a specific historical year matters.",
               minLength: 1,
               maxLength: 10000,
               examples: [
-                "Latest ECMAScript standard and new features",
-                "React 19: what's new vs 18?",
-                "Compare PostgreSQL 16 vs MySQL 8.4 for OLTP",
-                "Check online: is OpenSSL 3.3.2 out yet?",
+                "Find current ECMAScript standard and key new features",
+                "React 19 vs 18: breaking changes, migration steps, and notable new APIs",
+                "Find current Node.js LTS version and its release date",
+                "Check online: is OpenSSL 3.3.2 released yet? Link release notes if so",
               ],
             },
             output_file: {
               type: "string",
-              description: "Optional file path to save the response. Supports both absolute paths (/Users/name/research.md) and relative paths (./docs/research.md). Relative paths resolve from the Claude Code project root. If provided, the response will be written to this file in addition to being returned.",
+              description: "Optional path to write the response (also returned inline). Absolute or relative; relative resolves from the project root. Parent directories are created if needed; existing files are overwritten.",
               examples: [
                 "./docs/research.md",
                 "output/gemini-response.txt",
@@ -156,7 +155,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             model: {
               type: "string",
-              description: "Optional Gemini model to use. Choose 'flash' for simple information lookup queries, 'flash-lite' for the fastest/cheapest simple factual lookups, or 'pro' (default) when you need to search and perform advanced reasoning over the results.",
+              description: "Gemini model: 'pro' (default) for deeper synthesis, 'flash' for quick lookups, 'flash-lite' for cheapest/fastest simple facts.",
               enum: ["flash", "flash-lite", "pro"],
               default: "pro",
               examples: ["flash", "flash-lite", "pro"],

@@ -10,21 +10,21 @@ import assert from "node:assert";
 const askGoogleToolDefinition = {
   name: "ask_google",
   description:
-    "Grounded Google web research. Use when asked to 'check online', 'ask google', 'research', verify latest standards/versions, compare releases, or when current info is needed.",
+    "Grounded Google web research for current/latest info, version checks, and comparisons. Short or long questions; prefer 'current/latest' over hardcoding years.",
   inputSchema: {
     type: "object",
     additionalProperties: false,
     properties: {
       question: {
         type: "string",
-        description: "Research question to answer with grounded web search.",
+        description: "Grounded web-search query. Can be a short lookup or long-form, multi-part research request. Prefer 'current/latest/as of today' over hardcoding dates unless a specific historical year matters.",
         minLength: 1,
         maxLength: 10000,
         examples: [
-          "Latest ECMAScript standard and new features",
-          "React 19: what's new vs 18?",
-          "Compare PostgreSQL 16 vs MySQL 8.4 for OLTP",
-          "Check online: is OpenSSL 3.3.2 out yet?",
+          "Find current ECMAScript standard and key new features",
+          "React 19 vs 18: breaking changes, migration steps, and notable new APIs",
+          "Find current Node.js LTS version and its release date",
+          "Check online: is OpenSSL 3.3.2 released yet? Link release notes if so",
         ],
       },
     },
@@ -34,28 +34,24 @@ const askGoogleToolDefinition = {
 
 describe("Tool description and schema", () => {
   describe("invocation cues", () => {
-    it("should include 'check online' trigger phrase", () => {
-      assert.ok(askGoogleToolDefinition.description.includes("check online"));
+    it("should mention current/latest info use case", () => {
+      assert.ok(askGoogleToolDefinition.description.includes("current/latest info"));
     });
 
-    it("should include 'ask google' trigger phrase", () => {
-      assert.ok(askGoogleToolDefinition.description.includes("ask google"));
+    it("should mention version checks use case", () => {
+      assert.ok(askGoogleToolDefinition.description.includes("version checks"));
     });
 
-    it("should include 'research' trigger phrase", () => {
-      assert.ok(askGoogleToolDefinition.description.includes("research"));
+    it("should mention comparisons use case", () => {
+      assert.ok(askGoogleToolDefinition.description.includes("comparisons"));
     });
 
-    it("should mention latest standards/versions use case", () => {
-      assert.ok(askGoogleToolDefinition.description.includes("latest standards/versions"));
+    it("should mention short or long questions", () => {
+      assert.ok(askGoogleToolDefinition.description.includes("Short or long"));
     });
 
-    it("should mention release comparisons use case", () => {
-      assert.ok(askGoogleToolDefinition.description.includes("compare releases"));
-    });
-
-    it("should mention current info use case", () => {
-      assert.ok(askGoogleToolDefinition.description.includes("current info"));
+    it("should discourage hardcoding years", () => {
+      assert.ok(askGoogleToolDefinition.description.includes("prefer 'current/latest' over hardcoding years"));
     });
   });
 
@@ -92,14 +88,19 @@ describe("Tool description and schema", () => {
       assert.ok(examples.some((ex) => ex.includes("React 19")));
     });
 
-    it("should include database comparison example", () => {
+    it("should include Node.js LTS example", () => {
       const examples = askGoogleToolDefinition.inputSchema.properties.question.examples;
-      assert.ok(examples.some((ex) => ex.includes("PostgreSQL")));
+      assert.ok(examples.some((ex) => ex.includes("Node.js LTS")));
     });
 
     it("should include 'check online' usage example", () => {
       const examples = askGoogleToolDefinition.inputSchema.properties.question.examples;
       assert.ok(examples.some((ex) => ex.toLowerCase().includes("check online")));
+    });
+
+    it("should model 'Find current' phrasing in examples", () => {
+      const examples = askGoogleToolDefinition.inputSchema.properties.question.examples;
+      assert.ok(examples.some((ex) => ex.startsWith("Find current")));
     });
   });
 
@@ -122,7 +123,7 @@ describe("Tool description and schema", () => {
     it("should have descriptive parameter description", () => {
       const desc = askGoogleToolDefinition.inputSchema.properties.question.description;
       assert.ok(desc.length > 10);
-      assert.ok(desc.toLowerCase().includes("research") || desc.includes("question"));
+      assert.ok(desc.toLowerCase().includes("query") || desc.includes("search"));
     });
   });
 });
