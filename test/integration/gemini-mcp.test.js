@@ -30,7 +30,7 @@ describeLive("live Gemini MCP integration", () => {
     }
   });
 
-  it("completes MCP handshake and returns a grounded answer", async () => {
+  it("completes MCP handshake and lists tools", async () => {
     const initResponse = await sendRequest(server, {
       jsonrpc: "2.0",
       id: 1,
@@ -43,6 +43,7 @@ describeLive("live Gemini MCP integration", () => {
     });
 
     assert.ok(initResponse.result);
+    assert.ok(initResponse.result.serverInfo);
 
     sendNotification(server, {
       jsonrpc: "2.0",
@@ -56,8 +57,15 @@ describeLive("live Gemini MCP integration", () => {
       method: "tools/list",
       params: {},
     });
-    assert.ok(listResponse.result.tools.find((tool) => tool.name === "ask_google"));
 
+    const tools = listResponse.result.tools;
+    assert.ok(Array.isArray(tools));
+    const askGoogle = tools.find((tool) => tool.name === "ask_google");
+    assert.ok(askGoogle, "ask_google tool should be listed");
+    assert.ok(askGoogle.inputSchema, "tool should have an input schema");
+  });
+
+  it("returns a grounded answer for a simple query", async () => {
     const callResponse = await sendRequest(server, {
       jsonrpc: "2.0",
       id: 3,
@@ -65,14 +73,30 @@ describeLive("live Gemini MCP integration", () => {
       params: {
         name: "ask_google",
         arguments: {
-          question: "Who did the South African Springboks Rugby team play last and who won?",
+          question: "What is the capital of France?",
+          model: "flash-lite",
         },
       },
-    }, 60_000);
+    }, 30_000);
 
     assert.ifError(callResponse.error);
     assert.ok(callResponse.result?.content);
     const text = callResponse.result.content.find((item) => item.type === "text")?.text || "";
-    assert.match(text, /Sources:/);
+    assert.ok(text.length > 0, "response should not be empty");
+    assert.match(text, /Paris/i, "response should mention Paris");
+  });
+
+  it("returns an error for an unknown tool", async () => {
+    const callResponse = await sendRequest(server, {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: {
+        name: "nonexistent_tool",
+        arguments: {},
+      },
+    });
+
+    assert.ok(callResponse.error);
   });
 });

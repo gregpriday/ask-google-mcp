@@ -25,8 +25,8 @@
   "homepage": "https://github.com/gpriday/ask-google-mcp#readme",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test test/unit/**/*.test.js",
-    "test:integration": "node --test test/integration/**/*.test.js",
+    "test": "node --test $(find test/unit -name '*.test.js')",
+    "test:integration": "node --test $(find test/integration -name '*.test.js')",
     "test:all": "npm test && npm run test:integration",
     "dev": "node --watch src/index.js",
     "check-env": "node scripts/check-env.js",

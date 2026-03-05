@@ -1,32 +1,62 @@
 # Ask Google MCP Server
 
-A small MCP server that exposes one tool, `ask_google`, backed by Gemini search grounding.
+`ask-google-mcp` is a stdio MCP server that exposes a single tool, `ask_google`.
 
-It is designed for agent workflows that need current web information, version checks, release comparisons, and short research answers with citations.
+That tool sends a question to Gemini with Google Search grounding enabled, then returns:
 
-## Highlights
+- a synthesized answer
+- appended source links
+- appended search queries Gemini performed
 
-- Starts cleanly even if `GOOGLE_API_KEY` is not set, so MCP clients can still initialize and list tools
-- One grounded research tool with explicit model selection
-- Configurable request timeout and retry behavior
-- Optional `output_file` support, disabled by default and confined to a safe base directory
-- Source and search-query metadata appended to responses
-- Unit tests against production modules, plus a gated live integration test
+This is for agent workflows that need current web information inside an MCP client such as Claude Code.
 
-## Requirements
+## What It Does
 
-- Node.js `>=20`
-- A Google AI Studio API key for live tool calls
+`ask_google` is useful when the agent needs information that should not be answered from stale training data alone, for example:
 
-## Install
+- latest versions, releases, and changelogs
+- current docs, standards, or API changes
+- comparisons between current products or libraries
+- recent announcements or status checks
+- short web research tasks with citations
 
-### Global install
+The server is intentionally narrow:
+
+- one MCP tool: `ask_google`
+- stdio transport only
+- no web UI
+- no HTTP server
+
+## Recommended Setup: Claude Code User Scope
+
+I checked the local Claude Code CLI help.
+
+`claude mcp --help` shows that `add` supports scopes `local`, `user`, and `project`, and `claude mcp add --help` shows the default scope is `local`.
+
+If you want this available across all projects, use `--scope user`.
+
+### Option 1: Install from npm globally
 
 ```bash
 npm install -g @gpriday/ask-google-mcp
 ```
 
-### Local development
+Then add it to Claude Code at user scope and set the API key directly in the MCP config:
+
+```bash
+claude mcp add --scope user -e GOOGLE_API_KEY=your_api_key_here ask-google -- ask-google-mcp
+```
+
+Verify it:
+
+```bash
+claude mcp get ask-google
+claude mcp list
+```
+
+### Option 2: Use a local checkout
+
+This is better for development, not for normal usage.
 
 ```bash
 git clone https://github.com/gpriday/ask-google-mcp.git
@@ -34,100 +64,193 @@ cd ask-google-mcp
 npm install
 ```
 
-## Configuration
+Then register that checkout with Claude Code:
 
-The server loads environment variables from:
+```bash
+claude mcp add --scope user -e GOOGLE_API_KEY=your_api_key_here ask-google -- node /absolute/path/to/ask-google-mcp/src/index.js
+```
 
-1. `./.env`
+## Requirements
+
+- Node.js `>=20`
+- A Google AI Studio API key with Gemini access
+
+Get an API key here:
+
+- https://aistudio.google.com/apikey
+
+## How Configuration Actually Works
+
+The server loads environment variables in this order:
+
+1. `process.cwd()/.env`
 2. `~/.env`
-3. The process environment
+3. existing process environment variables
 
-Minimum configuration:
+That means:
+
+- it does read `~/.env`
+- it does not read a fixed repository root unless the server process is started from that directory
+- for Claude Code, passing the API key with `claude mcp add -e GOOGLE_API_KEY=...` is the clearest and most reliable setup
+
+Minimum required variable for live tool calls:
 
 ```bash
 GOOGLE_API_KEY=your_api_key_here
 ```
 
-Optional runtime settings:
+Optional variables:
 
 ```bash
 ASK_GOOGLE_TIMEOUT_MS=30000
 ASK_GOOGLE_ALLOW_FILE_OUTPUT=false
 ASK_GOOGLE_OUTPUT_DIR=.
+ASK_GOOGLE_MAX_RETRIES=3
+ASK_GOOGLE_INITIAL_RETRY_DELAY_MS=1000
+
+# Optional model alias overrides
 # ASK_GOOGLE_MODEL_PRO=gemini-3.1-pro-preview
 # ASK_GOOGLE_MODEL_FLASH=gemini-3-flash-preview
 # ASK_GOOGLE_MODEL_FLASH_LITE=gemini-3.1-flash-lite-preview
 ```
 
-Validate your setup locally:
+## Runtime Behavior
 
-```bash
-npm run check-env
-```
+- The server starts even if `GOOGLE_API_KEY` is missing.
+- MCP clients can still initialize and list tools without the key.
+- The `ask_google` tool itself returns an `[AUTH_ERROR]` if called without a key.
+- Requests time out after `ASK_GOOGLE_TIMEOUT_MS` milliseconds unless you override it.
+- Retries are enabled for retryable upstream failures.
 
-## Usage
+## Tool Reference
 
-### Start the server
+### Tool name
 
-Global install:
+`ask_google`
 
-```bash
-ask-google-mcp
-```
+### Inputs
 
-Local checkout:
+- `question` - required string, 1 to 10,000 characters
+- `model` - optional: `pro`, `flash`, or `flash-lite`
+- `output_file` - optional file path for saving the final response
 
-```bash
-npm start
-```
+### Model aliases
 
-The server communicates over stdio using JSON-RPC 2.0.
+- `pro` -> `gemini-3.1-pro-preview`
+- `flash` -> `gemini-3-flash-preview`
+- `flash-lite` -> `gemini-3.1-flash-lite-preview`
 
-If `GOOGLE_API_KEY` is missing, the server still starts and lists tools, but `ask_google` calls return an `[AUTH_ERROR]`.
+Those defaults can be overridden with environment variables if Google renames preview models.
 
-### Tool: `ask_google`
+### `output_file` safety rules
 
-Use it when the caller needs current information from the web.
+`output_file` is intentionally locked down.
 
-Inputs:
+- It is disabled by default.
+- It only works when `ASK_GOOGLE_ALLOW_FILE_OUTPUT=true`.
+- Writes are restricted to `ASK_GOOGLE_OUTPUT_DIR`.
+- Relative paths resolve under that base directory.
+- Absolute paths are only allowed if they still resolve inside that base directory.
 
-- `question` - required string, `1..10000` characters
-- `model` - optional: `pro` (default), `flash`, or `flash-lite`
-- `output_file` - optional path to save the response; only works when `ASK_GOOGLE_ALLOW_FILE_OUTPUT=true`
+## Example Tool Calls
 
-`output_file` safety rules:
-
-- Writes are disabled by default
-- Relative paths resolve under `ASK_GOOGLE_OUTPUT_DIR` or the current working directory
-- Absolute paths are allowed only if they still resolve inside the configured base directory
-
-Example tool call:
+### Basic current-information query
 
 ```json
 {
   "name": "ask_google",
   "arguments": {
-    "question": "Find current Node.js LTS version and release date",
+    "question": "Find the current Node.js LTS version and its release date"
+  }
+}
+```
+
+### Faster lookup with `flash`
+
+```json
+{
+  "name": "ask_google",
+  "arguments": {
+    "question": "What is the latest stable TypeScript release?",
     "model": "flash"
   }
 }
 ```
 
-Example with file output enabled:
+### Research-style comparison
 
 ```json
 {
   "name": "ask_google",
   "arguments": {
-    "question": "React 19 vs 18: breaking changes and migration steps",
-    "output_file": "./research/react19.md"
+    "question": "React 19 vs React 18: current migration risks, breaking changes, and official upgrade guidance"
   }
 }
 ```
 
-## Client setup
+### Save output to a file
 
-### Claude Desktop
+This only works if file output is enabled in the server environment.
+
+```json
+{
+  "name": "ask_google",
+  "arguments": {
+    "question": "Summarize the latest ECMAScript standard and notable additions",
+    "output_file": "research/ecmascript.md"
+  }
+}
+```
+
+## What The Tool Returns
+
+The tool returns text content that includes:
+
+- Gemini's answer
+- a `Sources` section appended by the server
+- a `Search queries performed` section appended by the server when available
+
+## CLI Usage
+
+If you installed the package globally:
+
+```bash
+ask-google-mcp
+```
+
+If you are running from a local checkout:
+
+```bash
+npm start
+```
+
+CLI flags:
+
+```bash
+ask-google-mcp --help
+ask-google-mcp --version
+```
+
+## Environment Validation
+
+For local development, validate configuration with:
+
+```bash
+npm run check-env
+```
+
+That script checks:
+
+- whether a local `.env` or `~/.env` exists
+- whether `GOOGLE_API_KEY` looks present and non-placeholder
+- Node.js version compatibility
+- optional runtime settings like timeout and file-output flags
+
+## Claude Desktop
+
+Claude Code is the primary recommended workflow, but Claude Desktop can also run the server.
+
+Global install example:
 
 ```json
 {
@@ -142,7 +265,7 @@ Example with file output enabled:
 }
 ```
 
-For a local checkout, replace the command with:
+Local checkout example:
 
 ```json
 {
@@ -158,37 +281,9 @@ For a local checkout, replace the command with:
 }
 ```
 
-### Claude Code
-
-Global install:
-
-```bash
-claude mcp add --scope user ask-google -e GOOGLE_API_KEY=your_api_key_here -- ask-google-mcp
-```
-
-Local checkout:
-
-```bash
-claude mcp add --scope project ask-google -e GOOGLE_API_KEY=your_api_key_here -- node /absolute/path/to/ask-google-mcp/src/index.js
-```
-
-### Codex CLI
-
-Global install:
-
-```bash
-codex mcp add ask-google --env GOOGLE_API_KEY=your_api_key_here -- ask-google-mcp
-```
-
-Local checkout:
-
-```bash
-codex mcp add ask-google --env GOOGLE_API_KEY=your_api_key_here -- node /absolute/path/to/ask-google-mcp/src/index.js
-```
-
 ## Development
 
-Project layout:
+Project structure:
 
 ```text
 src/
@@ -211,38 +306,29 @@ test/
 
 Scripts:
 
-- `npm start` - run the MCP server
+- `npm start` - start the MCP server
 - `npm test` - run unit tests
-- `npm run test:integration` - run live integration tests when `RUN_LIVE_TESTS=1`
+- `npm run test:integration` - run live integration tests when enabled
 - `npm run test:all` - run both suites
 - `npm run dev` - run with `node --watch`
-- `npm run check-env` - validate local configuration
+- `npm run check-env` - validate environment config
 
-Live integration tests are skipped unless both of these are set:
+Live integration tests only run when both are set:
 
 ```bash
 RUN_LIVE_TESTS=1
 GOOGLE_API_KEY=your_api_key_here
 ```
 
-## CI
+## Error Categories
 
-GitHub Actions runs:
-
-- `npm ci`
-- `npm test`
-- `node src/index.js --help`
-- `node src/index.js --version`
-
-## Error categories
-
-Tool failures are returned as MCP errors with categorized messages:
+Tool failures are surfaced as MCP errors with categorized messages:
 
 - `[AUTH_ERROR]` - missing or invalid API key
-- `[QUOTA_ERROR]` - quota or rate limit exhaustion
+- `[QUOTA_ERROR]` - quota or rate limit exceeded
 - `[TIMEOUT_ERROR]` - request timed out
-- `[API_ERROR]` - other Gemini failures
-- `[CONFIG_ERROR]` - unsafe or disabled file output configuration
+- `[API_ERROR]` - other Gemini/API failures
+- `[CONFIG_ERROR]` - disabled or unsafe file-output configuration
 
 ## License
 

@@ -19,3 +19,19 @@ jobs:
       - run: npm test
       - run: node src/index.js --help
       - run: node src/index.js --version
+
+  integration:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run test:integration
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          RUN_LIVE_TESTS: "1"
