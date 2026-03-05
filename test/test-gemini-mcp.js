@@ -116,7 +116,6 @@ async function runTests() {
     env: {
       ...process.env,
       GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
-      GEMINI_MODEL: process.env.GEMINI_MODEL || 'models/gemini-2.5-pro-latest'
     },
     cwd: join(__dirname, '..'),
     stdio: ['pipe', 'pipe', 'pipe']

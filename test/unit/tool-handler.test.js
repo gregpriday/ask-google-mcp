@@ -868,7 +868,7 @@ describe("ask_google tool handler", () => {
         text: "test response",
       });
 
-      // The handler builds: models/gemini-flash-latest
+      // The handler builds: gemini-3-flash-preview
       const result = await handleAskGoogle("test question", model, undefined, "flash");
       assert.ok(result);
     });
@@ -878,7 +878,7 @@ describe("ask_google tool handler", () => {
         text: "test response",
       });
 
-      // The handler builds: models/gemini-flash-lite-latest
+      // The handler builds: gemini-3.1-flash-lite-preview
       const result = await handleAskGoogle("test question", model, undefined, "flash-lite");
       assert.ok(result);
     });
@@ -888,7 +888,7 @@ describe("ask_google tool handler", () => {
         text: "test response",
       });
 
-      // The handler builds: models/gemini-pro-latest
+      // The handler builds: gemini-3.1-pro-preview
       const result = await handleAskGoogle("test question", model, undefined, "pro");
       assert.ok(result);
     });

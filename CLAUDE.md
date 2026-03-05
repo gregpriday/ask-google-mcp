@@ -71,7 +71,7 @@ The server implements a **single-tool MCP server** following the stdio transport
 
 **Model selection** (src/index.js):
 - Supports three models via the `model` parameter: `pro` (default), `flash`, `flash-lite`
-- Model map: `pro` → `gemini-3-pro-preview`, `flash` → `gemini-3-flash-preview`, `flash-lite` → `models/gemini-flash-lite-latest`
+- Model map: `pro` → `gemini-3.1-pro-preview`, `flash` → `gemini-3-flash-preview`, `flash-lite` → `gemini-3.1-flash-lite-preview`
 - Model is configured with `systemInstruction` for AI-optimized output (terse, structured, code-focused)
 
 **Search grounding** (src/index.js):

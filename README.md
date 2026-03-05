@@ -106,7 +106,7 @@ Grounded Google web research (Gemini).
 
 **Input:**
 - `question` (string, required) — the research question (1-10,000 characters)
-- `output_file` (string, optional) — file path to save the response. Supports both absolute paths (`/Users/name/research.md`) and relative paths (`./docs/research.md`). Relative paths resolve from your project root.
+- `output_file` (string, optional) — file path to save the response. Supports both absolute paths (`/Users/name/research.md`) and relative paths (`./docs/research.md`). Relative paths resolve from the process working directory.
 - `model` (string, optional) — Gemini model to use: `pro` (default, recommended), `flash` (faster/cheaper for simple lookups), or `flash-lite` (fastest/cheapest)
 
 **Output:**

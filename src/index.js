@@ -59,6 +59,9 @@ if (!apiKey) {
 
 const genAI = new GoogleGenerativeAI(apiKey);
 
+// Cache system prompt template at startup (only date substitution needed per request)
+const systemPromptTemplate = readFileSync(join(__dirname, "system-prompt.txt"), "utf-8");
+
 // Retry configuration
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000; // 1 second
@@ -85,8 +88,14 @@ async function retryWithBackoff(fn, maxRetries = MAX_RETRIES, initialDelay = INI
 
       // Don't retry auth errors or quota errors (permanent failures)
       if (lowerMessage.includes("api key") ||
+          lowerMessage.includes("unauthorized") ||
+          lowerMessage.includes("permission") ||
+          lowerMessage.includes("401") ||
+          lowerMessage.includes("403") ||
           lowerMessage.includes("quota") ||
-          lowerMessage.includes("rate limit")) {
+          lowerMessage.includes("rate limit") ||
+          lowerMessage.includes("429") ||
+          lowerMessage.includes("resource exhausted")) {
         throw error;
       }
 
@@ -97,7 +106,7 @@ async function retryWithBackoff(fn, maxRetries = MAX_RETRIES, initialDelay = INI
 
       // Calculate delay with exponential backoff
       const delay = initialDelay * Math.pow(2, attempt);
-      console.error(`[RETRY] Attempt ${attempt + 1}/${maxRetries} failed: ${errorMessage}. Retrying in ${delay}ms...`);
+      console.error(`[RETRY] Attempt ${attempt + 1}/${maxRetries + 1} failed: ${errorMessage}. Retrying in ${delay}ms...`);
 
       // Wait before retrying
       await new Promise(resolve => setTimeout(resolve, delay));
@@ -146,7 +155,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             output_file: {
               type: "string",
-              description: "Optional path to write the response (also returned inline). Absolute or relative; relative resolves from the project root. Parent directories are created if needed; existing files are overwritten.",
+              description: "Optional path to write the response (also returned inline). Absolute or relative; relative resolves from the current working directory. Parent directories are created if needed; existing files are overwritten.",
               examples: [
                 "./docs/research.md",
                 "output/gemini-response.txt",
@@ -206,7 +215,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     // Note: Both absolute and relative paths are supported
-    // Relative paths resolve from the Claude Code working directory (project root)
+    // Relative paths resolve from the current working directory
   }
 
   // Input validation for model
@@ -224,9 +233,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const modelString = modelMap[modelType];
 
   try {
-    // System prompt loaded from external file for easy editing
-    const systemPrompt = readFileSync(join(__dirname, "system-prompt.txt"), "utf-8")
-      .replace("{{CURRENT_DATE}}", new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }));
+    const systemPrompt = systemPromptTemplate
+      .replace("{{CURRENT_DATE}}", new Date().toISOString().slice(0, 10) + " (UTC)");
 
     // Get the model with search grounding
     const model = genAI.getGenerativeModel({
@@ -249,16 +257,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       domain: chunk.web?.domain || "",
     })) || [];
 
-    // Deduplicate sources by URL and filter out empty URLs
+    // Deduplicate sources by URL, filter out empty URLs, and cap to avoid bloat
     const seenUrls = new Set();
     const sources = rawSources.filter(source => {
       if (!source.url) return false;
       if (seenUrls.has(source.url)) return false;
       seenUrls.add(source.url);
       return true;
-    });
+    }).slice(0, 12);
 
-    const searches = metadata?.webSearchQueries || [];
+    const searches = (metadata?.webSearchQueries || []).slice(0, 8);
 
     // Build comprehensive response
     let fullResponse = response.text();
@@ -306,9 +314,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const lowerMessage = errorMessage.toLowerCase();
 
     // Categorize errors (case-insensitive)
-    if (lowerMessage.includes("api key")) {
+    if (lowerMessage.includes("api key") || lowerMessage.includes("unauthorized") ||
+        lowerMessage.includes("permission") || lowerMessage.includes("401") || lowerMessage.includes("403")) {
       throw new Error(`[AUTH_ERROR] Invalid or missing API key: ${errorMessage}`);
-    } else if (lowerMessage.includes("quota") || lowerMessage.includes("rate limit")) {
+    } else if (lowerMessage.includes("quota") || lowerMessage.includes("rate limit") ||
+               lowerMessage.includes("429") || lowerMessage.includes("resource exhausted")) {
       throw new Error(`[QUOTA_ERROR] API quota exceeded: ${errorMessage}`);
     } else if (lowerMessage.includes("timeout")) {
       throw new Error(`[TIMEOUT_ERROR] Request timed out: ${errorMessage}`);
