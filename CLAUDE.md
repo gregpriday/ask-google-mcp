@@ -46,45 +46,59 @@ npm run security:update      # Update deps and audit
 
 The server implements a **single-tool MCP server** following the stdio transport pattern:
 
-1. **Server Initialization** (src/index.js:21-31)
+1. **Server Initialization** (src/index.js:117-128)
    - Creates MCP Server instance with name/version metadata
    - Declares `tools` capability
    - Connects to StdioServerTransport for JSON-RPC communication
 
-2. **Tool Registration** (src/index.js:34-64)
+2. **Tool Registration** (src/index.js:131-176)
    - Handles `ListToolsRequestSchema` to expose the `ask_google` tool
    - Tool description is optimized for AI agent invocation with clear trigger phrases
    - Input schema includes validation rules and examples
 
-3. **Request Handling** (src/index.js:67-169)
+3. **Request Handling** (src/index.js:179-326)
    - Handles `CallToolRequestSchema` for tool execution
    - **Input validation**: null/undefined check → type check → empty string check → length check (max 10,000 chars)
    - **Gemini integration**: Uses `getGenerativeModel()` with `tools: [{ googleSearch: {} }]` for search grounding
-   - **Response formatting**: Extracts grounding metadata (sources, search queries) and appends to response text
+   - **Response formatting**: Extracts grounding metadata (sources, search queries), caps at 12 sources and 8 queries, then appends to response text
    - **Error categorization**: Maps Gemini errors to MCP-friendly error codes (AUTH_ERROR, QUOTA_ERROR, TIMEOUT_ERROR, API_ERROR)
 
-4. **Process Stability** (src/index.js:172-191)
+4. **Process Stability** (src/index.js:328-360)
    - Handles unhandled rejections, uncaught exceptions, SIGINT, SIGTERM
    - All failures trigger clean shutdown with error logging to stderr
 
 ### Gemini Model Configuration
 
-**Model selection** (src/index.js):
+**Model selection** (src/index.js:226-231):
 - Supports three models via the `model` parameter: `pro` (default), `flash`, `flash-lite`
 - Model map: `pro` → `gemini-3.1-pro-preview`, `flash` → `gemini-3-flash-preview`, `flash-lite` → `gemini-3.1-flash-lite-preview`
-- Model is configured with `systemInstruction` for AI-optimized output (terse, structured, code-focused)
+- Model is configured with `systemInstruction` loaded from `src/system-prompt.txt` (cached at startup, date injected per request as ISO-8601)
+- System prompt optimized for AI-to-AI communication (terse, direct, no conversational fluff)
 
-**Search grounding** (src/index.js):
+**Search grounding** (src/index.js:238-242, 250-268):
 - Enabled via `tools: [{ googleSearch: {} }]` in model config
 - Returns `groundingMetadata` with source URLs and search queries performed
-- Sources are deduplicated by URL and filtered for empty URLs
-- Sources are formatted as markdown links appended to response
+- Sources are deduplicated by URL, filtered for empty URLs, and capped at 12 to prevent bloat
+- Search queries are capped at 8
+- Sources and queries formatted as markdown and appended to response
+
+### System Prompt Design
+
+**src/system-prompt.txt** defines Gemini's response behavior:
+- Loaded once at startup and cached (line 63), only `{{CURRENT_DATE}}` substituted per request (line 236-237)
+- Current date injected as ISO-8601: `YYYY-MM-DD (UTC)` for unambiguous parsing
+- Optimized for AI-to-AI communication (no pleasantries, conversational filler, or marketing language)
+- Enforces information density and machine readability
+- Explicit anti-patterns list using "Do not X" per line (not "Do not:" header) for better LLM compliance
+- Instructs Gemini not to add its own "Sources" section (server appends authoritative sources list)
+- Guides response length, provenance flagging, code inclusion, and formatting choices
 
 ### Environment Validation Script
 
 **scripts/check-env.js** provides comprehensive validation:
-- Checks `.env` file existence
+- Checks `.env` file existence in both project root and home directory (`~/.env`), matching runtime precedence
 - Validates `GOOGLE_API_KEY` (not placeholder, minimum length)
+- Masks API key in output (shows length, not prefix, to prevent leaks)
 - Reports optional vars (`NODE_ENV`) with defaults
 - Validates Node.js version against `package.json` engines requirement
 - Exits with code 1 on failure (blocks `npm start` via prestart hook)
@@ -94,24 +108,40 @@ The server implements a **single-tool MCP server** following the stdio transport
 **Unit tests** (test/unit/tool-handler.test.js):
 - Mock `MockGenerativeModel` class simulates Gemini API responses
 - Extracted `handleAskGoogle()` function mirrors production logic for testability
-- Test categories: input validation, successful responses, error handling, edge cases
-- 37 total test cases covering all validation rules and error scenarios
+- Test categories: input validation, successful responses, error handling, edge cases, retry logic, output_file parameter, model parameter
+- 64 total test cases covering all validation rules, error scenarios, retry behavior, and file output
 
 **Integration test** (test/test-gemini-mcp.js):
-- Tests live Gemini API with real `GOOGLE_API_KEY`
+- Tests live Gemini API with real `GOOGLE_API_KEY` from `.env`
 - Validates actual search grounding, source extraction, error handling
+- Uses MCP protocol handshake (initialize → initialized → tools/list → tools/call)
 
 ## Important Patterns
 
 ### Error Handling Strategy
 
 All errors are **categorized by prefix** for MCP client consumption:
-- `[AUTH_ERROR]`: API key issues
-- `[QUOTA_ERROR]`: Rate limits or quota exceeded
-- `[TIMEOUT_ERROR]`: Request timeouts
-- `[API_ERROR]`: Generic Gemini API errors
+- `[AUTH_ERROR]`: API key issues (triggers: "api key", "unauthorized", "permission", "401", "403")
+- `[QUOTA_ERROR]`: Rate limits or quota exceeded (triggers: "quota", "rate limit", "429", "resource exhausted")
+- `[TIMEOUT_ERROR]`: Request timeouts (triggers: "timeout")
+- `[API_ERROR]`: Generic Gemini API errors (fallback for all other errors)
 
 Error detection uses **case-insensitive string matching** on `error.message.toLowerCase()`.
+
+**Retry logic** (src/index.js:76-115):
+- Retries up to 3 times with exponential backoff (1s, 2s, 4s)
+- AUTH_ERROR and QUOTA_ERROR are **not retried** (permanent failures)
+- All other errors are retried
+- Retry logging shows correct attempt count: "Attempt X/(N+1)"
+
+### Output File Behavior
+
+The `output_file` parameter (src/index.js:154-162, 287-299):
+- Accepts both absolute and relative paths
+- Relative paths resolve from the **current working directory** (`process.cwd()`), not "project root"
+- Parent directories are created automatically if needed (`mkdirSync` with `recursive: true`)
+- File write errors are non-fatal: response is still returned with error message appended
+- Successfully written files are logged to stderr: `[FILE_OUTPUT] Successfully wrote response to: {path}`
 
 ### Response Format Contract
 
@@ -131,7 +161,7 @@ Responses follow this structure:
 2. "query text"
 ```
 
-Sources and search queries are **optional** (only included if grounding metadata exists).
+Sources and search queries are **optional** (only included if grounding metadata exists). Sources are capped at 12 and search queries at 8 to prevent bloated responses.
 
 ### Package Distribution
 
