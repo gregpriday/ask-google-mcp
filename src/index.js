@@ -8,9 +8,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { config } from "dotenv";
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import { dirname, join, resolve } from "path";
 import { homedir } from "os";
 
 // Load .env file if it exists (supports both local dev and global install)
@@ -156,10 +156,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             model: {
               type: "string",
-              description: "Optional Gemini model to use. Choose 'flash' for simple information lookup queries, or 'pro' (default) when you need to search and perform advanced reasoning over the results.",
-              enum: ["flash", "pro"],
+              description: "Optional Gemini model to use. Choose 'flash' for simple information lookup queries, 'flash-lite' for the fastest/cheapest simple factual lookups, or 'pro' (default) when you need to search and perform advanced reasoning over the results.",
+              enum: ["flash", "flash-lite", "pro"],
               default: "pro",
-              examples: ["flash", "pro"],
+              examples: ["flash", "flash-lite", "pro"],
             },
           },
           required: ["question"],
@@ -211,7 +211,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   // Input validation for model
-  const validModels = ["flash", "pro"];
+  const validModels = ["flash", "flash-lite", "pro"];
   if (!validModels.includes(modelType)) {
     throw new Error(`model must be one of: ${validModels.join(", ")}. Got: ${modelType}`);
   }
@@ -219,14 +219,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // Build the model string
   const modelMap = {
     "flash": "gemini-3-flash-preview",
-    "pro": "gemini-3-pro-preview",
+    "flash-lite": "gemini-3.1-flash-lite-preview",
+    "pro": "gemini-3.1-pro-preview",
   };
   const modelString = modelMap[modelType];
 
   try {
     // System prompt loaded from external file for easy editing
     const systemPrompt = readFileSync(join(__dirname, "system-prompt.txt"), "utf-8")
-      .replace("{{CURRENT_DATE}}", new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }));
+      .replace("{{CURRENT_DATE}}", new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }));
 
     // Get the model with search grounding
     const model = genAI.getGenerativeModel({
@@ -243,11 +244,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     // Extract grounding metadata (sources and searches performed)
     const metadata = response.candidates?.[0]?.groundingMetadata;
-    const sources = metadata?.groundingChunks?.map(chunk => ({
+    const rawSources = metadata?.groundingChunks?.map(chunk => ({
       title: chunk.web?.title || "Unknown",
       url: chunk.web?.uri || "",
       domain: chunk.web?.domain || "",
     })) || [];
+
+    // Deduplicate sources by URL and filter out empty URLs
+    const seenUrls = new Set();
+    const sources = rawSources.filter(source => {
+      if (!source.url) return false;
+      if (seenUrls.has(source.url)) return false;
+      seenUrls.add(source.url);
+      return true;
+    });
 
     const searches = metadata?.webSearchQueries || [];
 
@@ -271,8 +281,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // Write to file if output_file was provided
     if (outputFile) {
       try {
-        writeFileSync(outputFile, fullResponse, "utf-8");
-        console.error(`[FILE_OUTPUT] Successfully wrote response to: ${outputFile}`);
+        const resolvedPath = resolve(outputFile);
+        mkdirSync(dirname(resolvedPath), { recursive: true });
+        writeFileSync(resolvedPath, fullResponse, "utf-8");
+        console.error(`[FILE_OUTPUT] Successfully wrote response to: ${resolvedPath}`);
       } catch (fileError) {
         // Log error but don't fail the request - the user still gets the response
         console.error(`[FILE_OUTPUT] Failed to write to ${outputFile}: ${fileError.message}`);

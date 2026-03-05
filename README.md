@@ -418,11 +418,11 @@ ask-google/
 ## Model Selection
 
 The server supports three Gemini models via the `model` parameter:
-- **pro** (default) — `gemini-3-pro-preview` — Advanced reasoning with search grounding, best for most queries
+- **pro** (default) — `gemini-3.1-pro-preview` — Advanced reasoning with search grounding, best for most queries
 - **flash** — `gemini-3-flash-preview` — Fast and cost-effective, good for simple information lookups
-- **flash-lite** — `models/gemini-flash-lite-latest` — Fastest and cheapest, good for simple factual queries
+- **flash-lite** — `gemini-3.1-flash-lite-preview` — Fastest and cheapest, good for simple factual queries
 
-Pro is used by default and recommended for most use cases. The model can be changed per-query using the `model` parameter (see examples above).
+Pro is used by default and recommended for most use cases. The model can be selected per-query using the `model` parameter (see examples above).
 
 ## Error Handling
 

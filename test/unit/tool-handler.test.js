@@ -116,7 +116,12 @@ async function handleAskGoogle(question, model, outputFile, modelType = "pro") {
   }
 
   // Build the model string (not used in tests, but validates the logic)
-  const modelString = `models/gemini-${modelType}-latest`;
+  const modelMap = {
+    "flash": "gemini-3-flash-preview",
+    "flash-lite": "gemini-3.1-flash-lite-preview",
+    "pro": "gemini-3.1-pro-preview",
+  };
+  const modelString = modelMap[modelType];
 
   try {
     // Generate content with retry logic
@@ -127,12 +132,21 @@ async function handleAskGoogle(question, model, outputFile, modelType = "pro") {
 
     // Extract grounding metadata
     const metadata = response.candidates?.[0]?.groundingMetadata;
-    const sources =
+    const rawSources =
       metadata?.groundingChunks?.map((chunk) => ({
         title: chunk.web?.title || "Unknown",
         url: chunk.web?.uri || "",
         domain: chunk.web?.domain || "",
       })) || [];
+
+    // Deduplicate sources by URL and filter out empty URLs
+    const seenUrls = new Set();
+    const sources = rawSources.filter(source => {
+      if (!source.url) return false;
+      if (seenUrls.has(source.url)) return false;
+      seenUrls.add(source.url);
+      return true;
+    });
 
     const searches = metadata?.webSearchQueries || [];
 

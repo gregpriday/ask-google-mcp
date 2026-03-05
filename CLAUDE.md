@@ -69,14 +69,15 @@ The server implements a **single-tool MCP server** following the stdio transport
 
 ### Gemini Model Configuration
 
-**Model selection** (src/index.js:36):
-- Hard-coded to `models/gemini-flash-latest` (points to Gemini 2.5 Flash)
-- Cannot be overridden - optimized for search grounding performance and cost
+**Model selection** (src/index.js):
+- Supports three models via the `model` parameter: `pro` (default), `flash`, `flash-lite`
+- Model map: `pro` → `gemini-3-pro-preview`, `flash` → `gemini-3-flash-preview`, `flash-lite` → `models/gemini-flash-lite-latest`
 - Model is configured with `systemInstruction` for AI-optimized output (terse, structured, code-focused)
 
-**Search grounding** (src/index.js:111):
+**Search grounding** (src/index.js):
 - Enabled via `tools: [{ googleSearch: {} }]` in model config
 - Returns `groundingMetadata` with source URLs and search queries performed
+- Sources are deduplicated by URL and filtered for empty URLs
 - Sources are formatted as markdown links appended to response
 
 ### Environment Validation Script
@@ -143,11 +144,11 @@ Sources and search queries are **optional** (only included if grounding metadata
 
 ## Model Configuration
 
-The server uses a hard-coded model for consistency:
-- Model: `models/gemini-flash-latest` (defined in src/index.js:36)
-- Optimized for search grounding with optimal cost/performance
-- No environment variable override - ensures consistent behavior across deployments
-- If model needs to be changed, edit the `MODEL` constant in src/index.js:36
+The server supports three models selectable per-query via the `model` parameter:
+- `pro` (default) → `gemini-3.1-pro-preview` — Advanced reasoning with search grounding
+- `flash` → `gemini-3-flash-preview` — Fast and cost-effective for simple lookups
+- `flash-lite` → `gemini-3.1-flash-lite-preview` — Fastest and cheapest for simple factual queries
+- Model map is defined in `src/index.js` in the `modelMap` object
 
 ## Release Process
 
