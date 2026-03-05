@@ -1,178 +1,133 @@
 # Ask Google MCP Server
 
-A Model Context Protocol (MCP) server that provides AI-powered Google search using Gemini with search grounding. This server enables Claude Desktop, Claude Code, and other MCP clients to perform real-time web searches and get AI-synthesized answers with citations.
+A small MCP server that exposes one tool, `ask_google`, backed by Gemini search grounding.
 
-## Features
+It is designed for agent workflows that need current web information, version checks, release comparisons, and short research answers with citations.
 
-- Real-time Google search via Gemini with search grounding
-- Configurable model (defaults to Gemini Pro for best quality)
-- Search grounding with source citations
-- Optimized responses for AI agent consumption
-- Terse, structured output (bullet points, tables, code blocks)
-- Automatic source attribution and search query tracking
+## Highlights
 
-## Prerequisites
+- Starts cleanly even if `GOOGLE_API_KEY` is not set, so MCP clients can still initialize and list tools
+- One grounded research tool with explicit model selection
+- Configurable request timeout and retry behavior
+- Optional `output_file` support, disabled by default and confined to a safe base directory
+- Source and search-query metadata appended to responses
+- Unit tests against production modules, plus a gated live integration test
 
-- Node.js >= 20.0.0 (Node.js 18.x reached End-of-Life April 2025)
-- Google API Key with Gemini API access
+## Requirements
 
-## Installation
+- Node.js `>=20`
+- A Google AI Studio API key for live tool calls
 
-### Option 1: NPM Global Install (Recommended)
+## Install
 
-Install globally from NPM:
+### Global install
 
 ```bash
 npm install -g @gpriday/ask-google-mcp
 ```
 
-The `ask-google-mcp` command will be available globally.
-
-### Option 2: Local Development Install
-
-For development or local testing:
+### Local development
 
 ```bash
-# Clone the repository
 git clone https://github.com/gpriday/ask-google-mcp.git
 cd ask-google-mcp
-
-# Install dependencies
 npm install
 ```
 
-### Configuration
+## Configuration
 
-Create a `.env` file in your project root or home directory (`~/.env`):
+The server loads environment variables from:
+
+1. `./.env`
+2. `~/.env`
+3. The process environment
+
+Minimum configuration:
 
 ```bash
 GOOGLE_API_KEY=your_api_key_here
 ```
 
-You can get a Google API key from [Google AI Studio](https://aistudio.google.com/apikey).
+Optional runtime settings:
 
-**For local development**, validate your configuration with:
+```bash
+ASK_GOOGLE_TIMEOUT_MS=30000
+ASK_GOOGLE_ALLOW_FILE_OUTPUT=false
+ASK_GOOGLE_OUTPUT_DIR=.
+# ASK_GOOGLE_MODEL_PRO=gemini-3.1-pro-preview
+# ASK_GOOGLE_MODEL_FLASH=gemini-3-flash-preview
+# ASK_GOOGLE_MODEL_FLASH_LITE=gemini-3.1-flash-lite-preview
+```
+
+Validate your setup locally:
+
 ```bash
 npm run check-env
 ```
 
-The server will automatically load `.env` from:
-1. Current working directory (`.env`)
-2. Home directory (`~/.env`) as fallback
-3. Or use environment variables directly
-
 ## Usage
 
-### Run the MCP Server
+### Start the server
 
-**If installed globally:**
+Global install:
+
 ```bash
 ask-google-mcp
 ```
 
-**If running locally:**
+Local checkout:
+
 ```bash
 npm start
 ```
 
-The server runs on stdio and communicates via JSON-RPC 2.0.
+The server communicates over stdio using JSON-RPC 2.0.
 
-**Note:** When running globally, the server will look for `.env` in the current directory or use environment variables directly.
+If `GOOGLE_API_KEY` is missing, the server still starts and lists tools, but `ask_google` calls return an `[AUTH_ERROR]`.
 
-### Test the Server
+### Tool: `ask_google`
 
-**Unit tests**
-```bash
-npm test
-```
+Use it when the caller needs current information from the web.
 
-**Integration test**
-```bash
-npm run test:integration
-```
+Inputs:
 
-**All tests**
-```bash
-npm run test:all
-```
+- `question` - required string, `1..10000` characters
+- `model` - optional: `pro` (default), `flash`, or `flash-lite`
+- `output_file` - optional path to save the response; only works when `ASK_GOOGLE_ALLOW_FILE_OUTPUT=true`
 
-### Available Tools
+`output_file` safety rules:
 
-#### ask_google
+- Writes are disabled by default
+- Relative paths resolve under `ASK_GOOGLE_OUTPUT_DIR` or the current working directory
+- Absolute paths are allowed only if they still resolve inside the configured base directory
 
-Grounded Google web research (Gemini).
+Example tool call:
 
-**Use when:** user says "check online", "ask google", "research"; asks for **latest standards/versions**, compares releases, or requests **up-to-date** facts.
-
-**Input:**
-- `question` (string, required) — the research question (1-10,000 characters)
-- `output_file` (string, optional) — file path to save the response. Supports both absolute paths (`/Users/name/research.md`) and relative paths (`./docs/research.md`). Relative paths resolve from the process working directory.
-- `model` (string, optional) — Gemini model to use: `pro` (default, recommended), `flash` (faster/cheaper for simple lookups), or `flash-lite` (fastest/cheapest)
-
-**Output:**
-- Concise answer with citations
-- Source URLs
-- Search queries performed
-- If `output_file` is provided, response is also written to the specified file
-
-**Examples:**
-
-Basic query (uses pro model by default):
 ```json
 {
   "name": "ask_google",
   "arguments": {
-    "question": "Latest ECMAScript standard and new features"
-  }
-}
-```
-
-With file output (relative path):
-```json
-{
-  "name": "ask_google",
-  "arguments": {
-    "question": "React 19: what's new vs 18?",
-    "output_file": "./docs/react19-research.md"
-  }
-}
-```
-
-With file output (absolute path):
-```json
-{
-  "name": "ask_google",
-  "arguments": {
-    "question": "React 19: what's new vs 18?",
-    "output_file": "/Users/john/Documents/react19-research.md"
-  }
-}
-```
-
-Using Flash model for simple lookups:
-```json
-{
-  "name": "ask_google",
-  "arguments": {
-    "question": "What is the latest version of Node.js?",
+    "question": "Find current Node.js LTS version and release date",
     "model": "flash"
   }
 }
 ```
 
-**Model Selection Guide:**
-- `pro` (default) — Best for most queries. Advanced reasoning with search grounding for thorough results.
-- `flash` — Use for simple information lookups where speed is preferred.
-- `flash-lite` — Use for simple factual lookups where speed is critical.
+Example with file output enabled:
 
-## Integration with Claude Desktop
+```json
+{
+  "name": "ask_google",
+  "arguments": {
+    "question": "React 19 vs 18: breaking changes and migration steps",
+    "output_file": "./research/react19.md"
+  }
+}
+```
 
-Add this server to your Claude Desktop configuration.
+## Client setup
 
-### If Installed Globally (Recommended)
-
-#### macOS
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+### Claude Desktop
 
 ```json
 {
@@ -187,49 +142,14 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-#### Windows
-Edit `%APPDATA%\Claude\claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "ask-google": {
-      "command": "ask-google-mcp",
-      "env": {
-        "GOOGLE_API_KEY": "your_api_key_here"
-      }
-    }
-  }
-}
-```
-
-#### Linux
-Edit `~/.config/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "ask-google": {
-      "command": "ask-google-mcp",
-      "env": {
-        "GOOGLE_API_KEY": "your_api_key_here"
-      }
-    }
-  }
-}
-```
-
-### If Running Locally
-
-#### macOS
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+For a local checkout, replace the command with:
 
 ```json
 {
   "mcpServers": {
     "ask-google": {
       "command": "node",
-      "args": ["/path/to/ask-google-mcp/src/index.js"],
+      "args": ["/absolute/path/to/ask-google-mcp/src/index.js"],
       "env": {
         "GOOGLE_API_KEY": "your_api_key_here"
       }
@@ -238,214 +158,92 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-#### Windows
-Edit `%APPDATA%\Claude\claude_desktop_config.json`:
+### Claude Code
 
-```json
-{
-  "mcpServers": {
-    "ask-google": {
-      "command": "node",
-      "args": ["C:\\path\\to\\ask-google-mcp\\src\\index.js"],
-      "env": {
-        "GOOGLE_API_KEY": "your_api_key_here"
-      }
-    }
-  }
-}
-```
+Global install:
 
-#### Linux
-Edit `~/.config/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "ask-google": {
-      "command": "node",
-      "args": ["/path/to/ask-google-mcp/src/index.js"],
-      "env": {
-        "GOOGLE_API_KEY": "your_api_key_here"
-      }
-    }
-  }
-}
-```
-
-**After updating the configuration, restart Claude Desktop.**
-
-## Integration with Claude Code
-
-Add the MCP server using the `claude mcp add` command.
-
-### If Installed Globally (Recommended)
-
-**For current project only:**
-```bash
-claude mcp add --scope project ask-google -e GOOGLE_API_KEY=your_api_key_here -- ask-google-mcp
-```
-
-**For your user (available in all projects):**
 ```bash
 claude mcp add --scope user ask-google -e GOOGLE_API_KEY=your_api_key_here -- ask-google-mcp
 ```
 
-**For local directory:**
+Local checkout:
+
 ```bash
-claude mcp add --scope local ask-google -e GOOGLE_API_KEY=your_api_key_here -- ask-google-mcp
+claude mcp add --scope project ask-google -e GOOGLE_API_KEY=your_api_key_here -- node /absolute/path/to/ask-google-mcp/src/index.js
 ```
 
-### If Running Locally
+### Codex CLI
 
-**For current project:**
-```bash
-claude mcp add --scope project ask-google -e GOOGLE_API_KEY=your_api_key_here -- node /path/to/ask-google-mcp/src/index.js
-```
+Global install:
 
-**Verify the server is running:**
-```bash
-claude mcp list
-```
-
-## Integration with OpenAI Codex
-
-**Note:** This refers to the **OpenAI Codex CLI** (released April 2025), a terminal-based coding agent with MCP support. This is different from the deprecated "OpenAI Codex" model from 2021-2023.
-
-Add the MCP server using the `codex mcp add` command or by editing the `~/.codex/config.toml` file.
-
-### Using CLI (Recommended)
-
-**If installed globally:**
 ```bash
 codex mcp add ask-google --env GOOGLE_API_KEY=your_api_key_here -- ask-google-mcp
 ```
 
-**If running locally:**
+Local checkout:
+
 ```bash
-codex mcp add ask-google --env GOOGLE_API_KEY=your_api_key_here -- node /path/to/ask-google-mcp/src/index.js
+codex mcp add ask-google --env GOOGLE_API_KEY=your_api_key_here -- node /absolute/path/to/ask-google-mcp/src/index.js
 ```
-
-**Verify the server:**
-```bash
-codex mcp list
-```
-
-### Manual Configuration
-
-Edit `~/.codex/config.toml`:
-
-**If installed globally:**
-```toml
-[mcp.ask-google]
-command = "ask-google-mcp"
-env = ["GOOGLE_API_KEY=your_api_key_here"]
-```
-
-**If running locally:**
-```toml
-[mcp.ask-google]
-command = "node"
-args = ["/path/to/ask-google-mcp/src/index.js"]
-env = ["GOOGLE_API_KEY=your_api_key_here"]
-```
-
-**Note:** Restart Codex CLI or IDE extension after editing `config.toml` for changes to take effect.
-
-## Response Format
-
-The server provides structured, terse responses optimized for AI consumption:
-
-- Bullet points for lists
-- Tables for comparisons
-- Code blocks for examples
-- Exact commands and configuration snippets
-- Side-by-side wrong/correct code examples
-- Version numbers and breaking changes
-- Source citations with URLs
-- Search queries performed
 
 ## Development
 
-### Dependency Management
+Project layout:
 
-This project follows MCP best practices for Node.js dependency management:
-
-- **Semver Ranges**: Dependencies use caret (`^`) ranges in `package.json` to automatically receive patch and minor security updates
-- **Lockfile**: `package-lock.json` is committed to ensure reproducible builds
-- **CI/CD**: Use `npm ci` (not `npm install`) to enforce lockfile versions in production
-- **Security**: Run `npm run security:audit` regularly and schedule `npm run security:update` for patch updates
-
-### Project Structure
-
-```
-ask-google/
-├── src/
-│   └── index.js               # Main MCP server
-├── scripts/
-│   └── check-env.js           # Environment validation
-├── test/
-│   ├── unit/
-│   │   └── tool-handler.test.js  # Unit tests
-│   └── test-gemini-mcp.js     # Integration tests
-├── package.json
-├── package-lock.json          # Committed for reproducibility
-├── .env                       # API key (git-ignored)
-├── .env.example               # API key template
-├── .gitignore
-├── LICENSE
-└── README.md
+```text
+src/
+  ask-google.js
+  config.js
+  errors.js
+  file-output.js
+  index.js
+  prompt.js
+  retry.js
+  server.js
+  system-prompt.txt
+scripts/
+  check-env.js
+test/
+  integration/
+  support/
+  unit/
 ```
 
-### Scripts
+Scripts:
 
-**Development:**
-- `npm start` - Start the MCP server (auto-runs environment validation)
-- `npm test` - Run unit tests
-- `npm run test:integration` - Run integration tests
-- `npm run test:all` - Run all tests (unit + integration)
-- `npm run dev` - Run server with auto-reload (Node 18+ with --watch)
+- `npm start` - run the MCP server
+- `npm test` - run unit tests
+- `npm run test:integration` - run live integration tests when `RUN_LIVE_TESTS=1`
+- `npm run test:all` - run both suites
+- `npm run dev` - run with `node --watch`
+- `npm run check-env` - validate local configuration
 
-**Environment & Security:**
-- `npm run check-env` - Validate environment configuration
-- `npm run security:audit` - Check for security vulnerabilities
-- `npm run security:fix` - Auto-fix security issues (within semver ranges)
-- `npm run security:update` - Update dependencies and audit for vulnerabilities
+Live integration tests are skipped unless both of these are set:
 
-## Environment Variables
+```bash
+RUN_LIVE_TESTS=1
+GOOGLE_API_KEY=your_api_key_here
+```
 
-- `GOOGLE_API_KEY` (required) - Your Google API key for Gemini API access
+## CI
 
-## Model Selection
+GitHub Actions runs:
 
-The server supports three Gemini models via the `model` parameter:
-- **pro** (default) — `gemini-3.1-pro-preview` — Advanced reasoning with search grounding, best for most queries
-- **flash** — `gemini-3-flash-preview` — Fast and cost-effective, good for simple information lookups
-- **flash-lite** — `gemini-3.1-flash-lite-preview` — Fastest and cheapest, good for simple factual queries
+- `npm ci`
+- `npm test`
+- `node src/index.js --help`
+- `node src/index.js --version`
 
-Pro is used by default and recommended for most use cases. The model can be selected per-query using the `model` parameter (see examples above).
+## Error categories
 
-## Error Handling
+Tool failures are returned as MCP errors with categorized messages:
 
-The server provides categorized error handling:
-
-- **Input Validation**: Questions are validated for presence, type, length (max 10,000 chars)
-- **[AUTH_ERROR]**: Missing or invalid API keys
-- **[QUOTA_ERROR]**: API quota or rate limit exceeded
-- **[TIMEOUT_ERROR]**: Request timeout errors
-- **[API_ERROR]**: General API errors
-- **Process Stability**: Unhandled rejections and exceptions trigger clean shutdown
+- `[AUTH_ERROR]` - missing or invalid API key
+- `[QUOTA_ERROR]` - quota or rate limit exhaustion
+- `[TIMEOUT_ERROR]` - request timed out
+- `[API_ERROR]` - other Gemini failures
+- `[CONFIG_ERROR]` - unsafe or disabled file output configuration
 
 ## License
 
 MIT
-
-## Contributing
-
-Contributions welcome! Please open an issue or PR.
-
-## Support
-
-For issues or questions:
-1. Check the [MCP documentation](https://modelcontextprotocol.io)
-2. Review [Google Gemini API docs](https://ai.google.dev/docs)
-3. Open an issue in this repository

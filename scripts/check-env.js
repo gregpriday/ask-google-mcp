@@ -1,14 +1,9 @@
 #!/usr/bin/env node
 
-/**
- * Environment validation script for Ask Google MCP Server
- * Validates all required environment variables and provides remediation steps
- */
-
-import { readFileSync, existsSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
+import { dirname, join, resolve } from "path";
+import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -34,30 +29,67 @@ const REQUIRED_ENV_VARS = [
 const OPTIONAL_ENV_VARS = [
   {
     name: "NODE_ENV",
-    description: "Node environment (development, production, test)",
+    description: "Node environment",
     default: "development",
   },
+  {
+    name: "ASK_GOOGLE_TIMEOUT_MS",
+    description: "Per-request timeout in milliseconds",
+    default: "30000",
+    validator: (value) => {
+      if (value === undefined) {
+        return null;
+      }
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        return "Must be a positive integer";
+      }
+      return null;
+    },
+  },
+  {
+    name: "ASK_GOOGLE_ALLOW_FILE_OUTPUT",
+    description: "Enable output_file writes when set to true",
+    default: "false",
+    validator: (value) => {
+      if (value === undefined) {
+        return null;
+      }
+      if (!["true", "false"].includes(value)) {
+        return "Must be either 'true' or 'false'";
+      }
+      return null;
+    },
+  },
+  {
+    name: "ASK_GOOGLE_OUTPUT_DIR",
+    description: "Base directory used for output_file writes",
+    default: process.cwd(),
+    validator: (value) => {
+      if (!value) {
+        return null;
+      }
+      try {
+        resolve(value);
+        return null;
+      } catch (error) {
+        return `Invalid path: ${error.message}`;
+      }
+    },
+  },
+  {
+    name: "ASK_GOOGLE_MODEL_PRO",
+    description: "Override the model id used for the 'pro' alias",
+  },
+  {
+    name: "ASK_GOOGLE_MODEL_FLASH",
+    description: "Override the model id used for the 'flash' alias",
+  },
+  {
+    name: "ASK_GOOGLE_MODEL_FLASH_LITE",
+    description: "Override the model id used for the 'flash-lite' alias",
+  },
 ];
-
-function checkEnvFile() {
-  const envPath = join(projectRoot, ".env");
-  const homeEnvPath = join(homedir(), ".env");
-
-  console.log("🔍 Checking environment configuration...\n");
-
-  // Check if .env file exists (project root or home directory, matching runtime behavior)
-  if (existsSync(envPath)) {
-    console.log("✅ .env file found (project root)");
-    return true;
-  }
-
-  if (existsSync(homeEnvPath)) {
-    console.log("✅ .env file found (home directory)");
-    return true;
-  }
-
-  return false; // Return false to indicate no file
-}
 
 function parseEnvFile(filePath) {
   try {
@@ -66,171 +98,170 @@ function parseEnvFile(filePath) {
 
     envContent.split("\n").forEach((line) => {
       const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith("#")) {
-        const [key, ...valueParts] = trimmed.split("=");
-        if (key) {
-          envVars[key.trim()] = valueParts.join("=").trim();
-        }
+      if (!trimmed || trimmed.startsWith("#")) {
+        return;
+      }
+
+      const [key, ...valueParts] = trimmed.split("=");
+      if (key) {
+        envVars[key.trim()] = valueParts.join("=").trim();
       }
     });
 
     return envVars;
   } catch (error) {
-    console.error(`❌ ERROR: Failed to read ${filePath}: ${error.message}`);
+    console.error(`ERROR: Failed to read ${filePath}: ${error.message}`);
     return null;
   }
 }
 
-function loadEnvFile() {
-  const envPath = join(projectRoot, ".env");
+function loadEnvFiles() {
+  const projectEnvPath = join(projectRoot, ".env");
   const homeEnvPath = join(homedir(), ".env");
-
-  // Load from both locations (matching runtime precedence: CWD first, then home)
-  const projectVars = existsSync(envPath) ? parseEnvFile(envPath) : {};
+  const projectVars = existsSync(projectEnvPath) ? parseEnvFile(projectEnvPath) : {};
   const homeVars = existsSync(homeEnvPath) ? parseEnvFile(homeEnvPath) : {};
 
   if (projectVars === null || homeVars === null) {
     return null;
   }
 
-  // Project .env takes precedence over home .env (same as runtime dotenv behavior)
   return { ...homeVars, ...projectVars };
 }
 
-function validateRequiredVars(envVars, hasEnvFile) {
-  console.log("\n🔐 Validating required environment variables...\n");
+function getValue(envVars, name) {
+  return envVars[name] ?? process.env[name];
+}
 
-  let allValid = true;
+function checkEnvFiles() {
+  const projectEnvPath = join(projectRoot, ".env");
+  const homeEnvPath = join(homedir(), ".env");
+
+  console.log("Checking environment configuration...\n");
+
+  if (existsSync(projectEnvPath)) {
+    console.log("OK: .env file found in project root");
+    return true;
+  }
+
+  if (existsSync(homeEnvPath)) {
+    console.log("OK: .env file found in home directory");
+    return true;
+  }
+
+  console.log("INFO: No .env file found; falling back to process environment");
+  return false;
+}
+
+function validateRequiredVars(envVars, hasEnvFile) {
+  console.log("\nValidating required environment variables...\n");
+  let success = true;
 
   for (const envVar of REQUIRED_ENV_VARS) {
-    const value = envVars[envVar.name] || process.env[envVar.name];
-
+    const value = getValue(envVars, envVar.name);
     if (!value) {
-      console.error(`❌ ${envVar.name}: MISSING`);
-      console.error(`   Description: ${envVar.description}`);
-      console.error(`   Remediation: ${envVar.remediation}`);
-
-      // Only suggest .env file if it doesn't exist
+      console.error(`MISSING: ${envVar.name}`);
+      console.error(`  Description: ${envVar.description}`);
+      console.error(`  Remediation: ${envVar.remediation}`);
       if (!hasEnvFile) {
-        console.error(`   Or: Create a .env file with ${envVar.name}=your_value`);
+        console.error(`  Or create a .env file with ${envVar.name}=your_value`);
       }
       console.error("");
-      allValid = false;
+      success = false;
       continue;
     }
 
-    // Run custom validator if provided
-    if (envVar.validator) {
-      const validationError = envVar.validator(value);
-      if (validationError) {
-        console.error(`⚠️  ${envVar.name}: INVALID`);
-        console.error(`   Issue: ${validationError}`);
-        console.error(`   Remediation: ${envVar.remediation}\n`);
-        allValid = false;
-        continue;
-      }
+    const validationError = envVar.validator?.(value);
+    if (validationError) {
+      console.error(`INVALID: ${envVar.name}`);
+      console.error(`  Issue: ${validationError}`);
+      console.error(`  Remediation: ${envVar.remediation}\n`);
+      success = false;
+      continue;
     }
 
-    console.log(`✅ ${envVar.name}: OK (length=${value.length})`);
+    console.log(`OK: ${envVar.name} (length=${value.length})`);
   }
 
-  return allValid;
+  return success;
 }
 
-function checkOptionalVars(envVars) {
-  console.log("\n📋 Checking optional environment variables...\n");
+function validateOptionalVars(envVars) {
+  console.log("\nChecking optional environment variables...\n");
 
   for (const envVar of OPTIONAL_ENV_VARS) {
-    const value = envVars[envVar.name] || process.env[envVar.name];
-
-    if (!value) {
-      console.log(`ℹ️  ${envVar.name}: Not set (default: ${envVar.default})`);
-    } else {
-      console.log(`✅ ${envVar.name}: ${value}`);
+    const value = getValue(envVars, envVar.name);
+    if (value === undefined) {
+      const suffix = envVar.default ? ` (default: ${envVar.default})` : "";
+      console.log(`INFO: ${envVar.name} not set${suffix}`);
+      continue;
     }
+
+    const validationError = envVar.validator?.(value);
+    if (validationError) {
+      console.error(`INVALID: ${envVar.name}`);
+      console.error(`  Issue: ${validationError}`);
+      continue;
+    }
+
+    console.log(`OK: ${envVar.name}=${value}`);
   }
 }
 
 function checkNodeVersion() {
-  console.log("\n🔧 Checking Node.js version...\n");
+  console.log("\nChecking Node.js version...\n");
 
-  const packagePath = join(projectRoot, "package.json");
-  const packageJson = JSON.parse(readFileSync(packagePath, "utf-8"));
-
+  const packageJson = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf-8"));
   const requiredVersion = packageJson.engines?.node;
   const currentVersion = process.version;
 
+  console.log(`  Required: ${requiredVersion || "not specified"}`);
+  console.log(`  Current:  ${currentVersion}`);
+
   if (!requiredVersion) {
-    console.log("⚠️  No Node.js version requirement specified in package.json");
     return true;
   }
 
-  console.log(`   Required: ${requiredVersion}`);
-  console.log(`   Current:  ${currentVersion}`);
-
-  // Simple version check (assumes >= format)
   const match = requiredVersion.match(/>=(\d+)/);
-  if (match) {
-    const requiredMajor = parseInt(match[1], 10);
-    const currentMajor = parseInt(currentVersion.slice(1).split(".")[0], 10);
-
-    if (currentMajor >= requiredMajor) {
-      console.log("✅ Node.js version is compatible");
-      return true;
-    } else {
-      console.error(
-        `❌ Node.js version too old. Please upgrade to ${requiredVersion}`
-      );
-      return false;
-    }
+  if (!match) {
+    return true;
   }
 
+  const requiredMajor = Number.parseInt(match[1], 10);
+  const currentMajor = Number.parseInt(currentVersion.slice(1).split(".")[0], 10);
+  if (currentMajor < requiredMajor) {
+    console.error(`Node.js version too old. Please upgrade to ${requiredVersion}`);
+    return false;
+  }
+
+  console.log("OK: Node.js version is compatible");
   return true;
 }
 
 function main() {
-  console.log("=" .repeat(60));
+  console.log("=".repeat(60));
   console.log("  Ask Google MCP Server - Environment Validation");
-  console.log("=" .repeat(60));
+  console.log("=".repeat(60));
 
-  let success = true;
+  const hasEnvFile = checkEnvFiles();
+  const envVars = loadEnvFiles();
+  let success = envVars !== null;
 
-  // Step 1: Check if .env file exists
-  const hasEnvFile = checkEnvFile();
+  success = validateRequiredVars(envVars || {}, hasEnvFile) && success;
+  validateOptionalVars(envVars || {});
+  success = checkNodeVersion() && success;
 
-  // Step 2: Load environment variables from file (or empty object)
-  const envVars = loadEnvFile();
-  if (envVars === null) {
-    // Only fail if file exists but couldn't be read
-    success = false;
-  }
-
-  // Step 3: Validate required variables (from file or process.env)
-  if (!validateRequiredVars(envVars || {}, hasEnvFile)) {
-    success = false;
-  }
-
-  // Step 4: Check optional variables
-  checkOptionalVars(envVars || {});
-
-  // Step 5: Check Node.js version
-  if (!checkNodeVersion()) {
-    success = false;
-  }
-
-  // Summary
   console.log("\n" + "=".repeat(60));
   if (success) {
-    console.log("✅ Environment validation PASSED");
+    console.log("Environment validation passed");
     console.log("=".repeat(60));
-    console.log("\n🚀 You can now run: npm start\n");
+    console.log("\nYou can now run: npm start\n");
     process.exit(0);
-  } else {
-    console.log("❌ Environment validation FAILED");
-    console.log("=".repeat(60));
-    console.log("\n🔧 Please fix the issues above before running the server.\n");
-    process.exit(1);
   }
+
+  console.log("Environment validation failed");
+  console.log("=".repeat(60));
+  console.log("\nFix the issues above before running the server.\n");
+  process.exit(1);
 }
 
 main();
