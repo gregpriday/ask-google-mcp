@@ -77,7 +77,7 @@ async function retryWithBackoff(fn, maxRetries = MAX_RETRIES, initialDelay = INI
 }
 
 // Simulate the tool handler logic (extracted for testing)
-async function handleAskGoogle(question, model, outputFile, modelType = "flash") {
+async function handleAskGoogle(question, model, outputFile, modelType = "pro") {
   // Input validation for question (matching src/index.js)
   if (!question) {
     throw new Error("Missing required parameter: question");
@@ -770,7 +770,7 @@ describe("ask_google tool handler", () => {
   });
 
   describe("model parameter", () => {
-    it("should default to flash model", async () => {
+    it("should default to pro model", async () => {
       const model = new MockGenerativeModel({
         text: "test response",
       });

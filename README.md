@@ -1,11 +1,11 @@
 # Ask Google MCP Server
 
-A Model Context Protocol (MCP) server that provides AI-powered Google search using Gemini Flash with search grounding. This server enables Claude Desktop, Claude Code, and other MCP clients to perform real-time web searches and get AI-synthesized answers with citations.
+A Model Context Protocol (MCP) server that provides AI-powered Google search using Gemini with search grounding. This server enables Claude Desktop, Claude Code, and other MCP clients to perform real-time web searches and get AI-synthesized answers with citations.
 
 ## Features
 
 - Real-time Google search via Gemini with search grounding
-- Configurable model (defaults to Gemini Flash Latest for cost-efficiency)
+- Configurable model (defaults to Gemini Pro for best quality)
 - Search grounding with source citations
 - Optimized responses for AI agent consumption
 - Terse, structured output (bullet points, tables, code blocks)
@@ -107,7 +107,7 @@ Grounded Google web research (Gemini).
 **Input:**
 - `question` (string, required) — the research question (1-10,000 characters)
 - `output_file` (string, optional) — file path to save the response. Supports both absolute paths (`/Users/name/research.md`) and relative paths (`./docs/research.md`). Relative paths resolve from your project root.
-- `model` (string, optional) — Gemini model to use: `flash` (default, recommended), `flash-lite` (faster/cheaper), or `pro` (most capable)
+- `model` (string, optional) — Gemini model to use: `pro` (default, recommended), `flash` (faster/cheaper for simple lookups), or `flash-lite` (fastest/cheapest)
 
 **Output:**
 - Concise answer with citations
@@ -117,7 +117,7 @@ Grounded Google web research (Gemini).
 
 **Examples:**
 
-Basic query (uses flash model by default):
+Basic query (uses pro model by default):
 ```json
 {
   "name": "ask_google",
@@ -149,21 +149,21 @@ With file output (absolute path):
 }
 ```
 
-Using Pro model for complex queries:
+Using Flash model for simple lookups:
 ```json
 {
   "name": "ask_google",
   "arguments": {
-    "question": "Compare microservice patterns: event sourcing vs CQRS vs saga",
-    "model": "pro"
+    "question": "What is the latest version of Node.js?",
+    "model": "flash"
   }
 }
 ```
 
 **Model Selection Guide:**
-- `flash` (default) — Best for most queries. Fast, cost-effective, excellent with search grounding.
+- `pro` (default) — Best for most queries. Advanced reasoning with search grounding for thorough results.
+- `flash` — Use for simple information lookups where speed is preferred.
 - `flash-lite` — Use for simple factual lookups where speed is critical.
-- `pro` — Use only for complex analysis or when flash results are insufficient. Slower and more expensive.
 
 ## Integration with Claude Desktop
 
@@ -418,11 +418,11 @@ ask-google/
 ## Model Selection
 
 The server supports three Gemini models via the `model` parameter:
-- **flash** (default) — `models/gemini-flash-latest` — Best balance of speed, cost, and quality
-- **flash-lite** — `models/gemini-flash-lite-latest` — Fastest and cheapest, good for simple queries
-- **pro** — `models/gemini-pro-latest` — Most capable but slower and more expensive
+- **pro** (default) — `gemini-3-pro-preview` — Advanced reasoning with search grounding, best for most queries
+- **flash** — `gemini-3-flash-preview` — Fast and cost-effective, good for simple information lookups
+- **flash-lite** — `models/gemini-flash-lite-latest` — Fastest and cheapest, good for simple factual queries
 
-Flash is used by default and recommended for most use cases. The model can be changed per-query using the `model` parameter (see examples above).
+Pro is used by default and recommended for most use cases. The model can be changed per-query using the `model` parameter (see examples above).
 
 ## Error Handling
 

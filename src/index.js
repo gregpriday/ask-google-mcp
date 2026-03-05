@@ -156,9 +156,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             model: {
               type: "string",
-              description: "Optional Gemini model to use. Choose 'flash' (default) for most information lookup queries, or 'pro' when you need to search and perform advanced reasoning over the results.",
+              description: "Optional Gemini model to use. Choose 'flash' for simple information lookup queries, or 'pro' (default) when you need to search and perform advanced reasoning over the results.",
               enum: ["flash", "pro"],
-              default: "flash",
+              default: "pro",
               examples: ["flash", "pro"],
             },
           },
@@ -177,7 +177,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   const question = request.params.arguments?.question;
   const outputFile = request.params.arguments?.output_file;
-  const modelType = request.params.arguments?.model || "flash";
+  const modelType = request.params.arguments?.model || "pro";
 
   // Input validation for question
   if (!question) {
@@ -224,20 +224,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const modelString = modelMap[modelType];
 
   try {
-    // System prompt optimized for AI agent consumption
-    const systemPrompt = `You are answering questions for an AI agent building developer skills and documentation.
-
-Output requirements:
-- Be terse and structured (use bullet points, tables, code blocks)
-- Focus on: specific syntax, decision rules, anti-patterns, breaking changes, version numbers
-- Avoid: marketing language, verbose explanations, unnecessary context
-- Include: exact commands, configuration snippets, code examples
-- Prioritize: patterns AI can apply directly to code generation
-- Format: Problem → Solution → Code Example (when applicable)
-- Use tables for comparisons (e.g., "Feature | Old Version | New Version")
-- List common mistakes with ❌ wrong code and ✅ correct code side-by-side
-
-Structure responses as actionable reference material, not tutorials.`;
+    // System prompt loaded from external file for easy editing
+    const systemPrompt = readFileSync(join(__dirname, "system-prompt.txt"), "utf-8")
+      .replace("{{CURRENT_DATE}}", new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }));
 
     // Get the model with search grounding
     const model = genAI.getGenerativeModel({
