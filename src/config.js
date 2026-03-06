@@ -44,7 +44,7 @@ export const INITIAL_RETRY_DELAY_MS = parsePositiveInteger(
 );
 export const REQUEST_TIMEOUT_MS = parsePositiveInteger(
   process.env.ASK_GOOGLE_TIMEOUT_MS,
-  30_000
+  120_000
 );
 export const FILE_OUTPUT_ENABLED = process.env.ASK_GOOGLE_ALLOW_FILE_OUTPUT === "true";
 export const FILE_OUTPUT_BASE_DIR = resolve(
