@@ -9,10 +9,10 @@ describe("ask_google tool definition", () => {
   });
 
   it("includes the expected invocation cues", () => {
-    assert.match(ASK_GOOGLE_TOOL.description, /current\/latest info/);
-    assert.match(ASK_GOOGLE_TOOL.description, /version checks/);
-    assert.match(ASK_GOOGLE_TOOL.description, /comparisons/);
-    assert.match(ASK_GOOGLE_TOOL.description, /Short or long/);
+    assert.match(ASK_GOOGLE_TOOL.description, /current\/latest/);
+    assert.match(ASK_GOOGLE_TOOL.description, /Google Search grounding/);
+    assert.match(ASK_GOOGLE_TOOL.description, /short lookups/);
+    assert.match(ASK_GOOGLE_TOOL.description, /research briefs/);
   });
 
   it("keeps the schema strict", () => {
