@@ -22,7 +22,8 @@ function printHelp() {
   console.log("  GOOGLE_API_KEY                  Google AI API key (required for tool calls)");
   console.log("  ASK_GOOGLE_TIMEOUT_MS           Per-request timeout in milliseconds");
   console.log("  ASK_GOOGLE_ALLOW_FILE_OUTPUT    Set to true to enable output_file writes");
-  console.log("  ASK_GOOGLE_OUTPUT_DIR           Base directory allowed for output_file writes\n");
+  console.log("  ASK_GOOGLE_OUTPUT_DIR           Base directory allowed for output_file writes");
+  console.log("  ASK_GOOGLE_ENABLED_MODELS       Comma-separated aliases to expose: pro, flash, flash-lite (default: all)\n");
   console.log("Options:");
   console.log("  -h, --help        Show this help message");
   console.log("  -v, --version     Show version number");

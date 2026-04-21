@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { ASK_GOOGLE_TOOL } from "../../src/tool.js";
-import { MAX_QUESTION_LENGTH, VALID_MODELS } from "../../src/config.js";
+import { ENABLED_MODELS, MAX_QUESTION_LENGTH } from "../../src/config.js";
 
 describe("ask_google tool definition", () => {
   it("uses the production tool name", () => {
@@ -27,7 +27,7 @@ describe("ask_google tool definition", () => {
     );
     assert.deepStrictEqual(
       ASK_GOOGLE_TOOL.inputSchema.properties.model.enum,
-      VALID_MODELS
+      ENABLED_MODELS
     );
   });
 
