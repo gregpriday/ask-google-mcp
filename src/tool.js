@@ -4,7 +4,7 @@ import { createInvalidParamsError } from "./errors.js";
 export const ASK_GOOGLE_TOOL = Object.freeze({
   name: "ask_google",
   description:
-    "Ask an AI researcher a question, powered by Gemini with Google Search grounding. Accepts anything from short lookups to detailed, multi-paragraph research briefs with full context. The question is answered by an LLM with real-time web access, so you can include background details, constraints, and follow-up angles — the more context you provide, the better the answer. Prefer 'current/latest' over hardcoding years.",
+    "Ask an AI researcher a question, powered by Gemini with Google Search grounding. Accepts anything from short lookups to detailed, multi-paragraph research briefs with full context. The question is answered by an LLM with real-time web access, so you can include background details, constraints, and follow-up angles — the more context you provide, the better the answer. Prefer 'current/latest' over hardcoding years. Pass the prompt as `question` (preferred) or `query` (alias).",
   inputSchema: {
     type: "object",
     additionalProperties: false,
@@ -12,7 +12,7 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
       question: {
         type: "string",
         description:
-          "Your question for the AI researcher. Can range from a short lookup to a detailed, multi-paragraph research brief with full context, constraints, and specific angles to explore. This is processed by an LLM (Gemini) with real-time Google Search access, so natural language with rich detail works best. Prefer 'current/latest/as of today' over hardcoding dates unless a specific historical year matters.",
+          "Your question for the AI researcher. Can range from a short lookup to a detailed, multi-paragraph research brief with full context, constraints, and specific angles to explore. This is processed by an LLM (Gemini) with real-time Google Search access, so natural language with rich detail works best. Prefer 'current/latest/as of today' over hardcoding dates unless a specific historical year matters. `query` is accepted as an alias.",
         minLength: 1,
         maxLength: MAX_QUESTION_LENGTH,
         examples: [
@@ -21,6 +21,13 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
           "Find current Node.js LTS version and its release date",
           "Check online: is OpenSSL 3.3.2 released yet? Link release notes if so",
         ],
+      },
+      query: {
+        type: "string",
+        description:
+          "Alias for `question`. Accepted for compatibility with callers that use the name `query`; prefer `question`. Do not set both at once.",
+        minLength: 1,
+        maxLength: MAX_QUESTION_LENGTH,
       },
       output_file: {
         type: "string",
@@ -40,16 +47,25 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
         examples: ENABLED_MODELS,
       },
     },
-    required: ["question"],
+    anyOf: [{ required: ["question"] }, { required: ["query"] }],
   },
 });
 
 export function validateAskGoogleArguments(rawArgs = {}) {
-  const question = rawArgs?.question;
+  const hasQuestion = rawArgs?.question !== undefined && rawArgs?.question !== null;
+  const hasQuery = rawArgs?.query !== undefined && rawArgs?.query !== null;
+
+  if (hasQuestion && hasQuery) {
+    throw createInvalidParamsError(
+      "Provide either 'question' or 'query' (alias), not both"
+    );
+  }
+
+  const question = hasQuestion ? rawArgs.question : rawArgs?.query;
   const outputFile = rawArgs?.output_file;
   const model = rawArgs?.model ?? DEFAULT_MODEL;
 
-  if (question === undefined || question === null) {
+  if (!hasQuestion && !hasQuery) {
     throw createInvalidParamsError("Missing required parameter: question");
   }
 

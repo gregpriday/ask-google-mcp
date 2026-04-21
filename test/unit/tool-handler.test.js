@@ -144,6 +144,26 @@ describe("validateAskGoogleArguments", () => {
       model: "pro",
     });
   });
+
+  it("accepts 'query' as an alias for 'question'", () => {
+    assert.deepStrictEqual(validateAskGoogleArguments({ query: "test" }), {
+      question: "test",
+      outputFile: undefined,
+      model: "pro",
+    });
+  });
+
+  it("rejects providing both 'question' and 'query'", () => {
+    assert.throws(
+      () => validateAskGoogleArguments({ question: "a", query: "b" }),
+      /Provide either 'question' or 'query'/
+    );
+  });
+
+  it("applies the same validation rules to the 'query' alias", () => {
+    assert.throws(() => validateAskGoogleArguments({ query: 123 }), /Question must be a string/);
+    assert.throws(() => validateAskGoogleArguments({ query: "   " }), /Question cannot be empty/);
+  });
 });
 
 describe("tool helpers", () => {
@@ -244,6 +264,14 @@ describe("createAskGoogleHandler", () => {
     assert.match(result.content[0].text, /latest node/);
     assert.strictEqual(createdModels[0].config.model, resolveModelId("flash"));
     assert.match(createdModels[0].config.systemInstruction, /Current date:/);
+  });
+
+  it("accepts the 'query' alias end-to-end", async () => {
+    const { handler } = createHandler();
+
+    const result = await handler({ query: "alias works" });
+
+    assert.match(result.content[0].text, /alias works/);
   });
 
   it("retries transient failures", async () => {

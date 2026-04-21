@@ -17,7 +17,18 @@ describe("ask_google tool definition", () => {
 
   it("keeps the schema strict", () => {
     assert.strictEqual(ASK_GOOGLE_TOOL.inputSchema.additionalProperties, false);
-    assert.deepStrictEqual(ASK_GOOGLE_TOOL.inputSchema.required, ["question"]);
+    assert.deepStrictEqual(ASK_GOOGLE_TOOL.inputSchema.anyOf, [
+      { required: ["question"] },
+      { required: ["query"] },
+    ]);
+  });
+
+  it("exposes 'query' as an alias for 'question'", () => {
+    const { query, question } = ASK_GOOGLE_TOOL.inputSchema.properties;
+    assert.ok(query, "expected a 'query' property on the schema");
+    assert.strictEqual(query.type, "string");
+    assert.strictEqual(query.maxLength, question.maxLength);
+    assert.match(query.description, /alias/i);
   });
 
   it("advertises the runtime limits from production config", () => {

@@ -130,7 +130,7 @@ ASK_GOOGLE_INITIAL_RETRY_DELAY_MS=1000
 
 ### Inputs
 
-- `question` - required string, 1 to 10,000 characters
+- `question` - required string, 1 to 10,000 characters (also accepted as `query` alias; do not set both)
 - `model` - optional: `pro`, `flash`, or `flash-lite`
 - `output_file` - optional file path for saving the final response
 
