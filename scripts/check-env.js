@@ -89,6 +89,26 @@ const OPTIONAL_ENV_VARS = [
     name: "ASK_GOOGLE_MODEL_FLASH_LITE",
     description: "Override the model id used for the 'flash-lite' alias",
   },
+  {
+    name: "ASK_GOOGLE_ENABLED_MODELS",
+    description:
+      "Comma-separated model aliases to expose (default: all). Valid aliases: pro, flash, flash-lite.",
+    validator: (value) => {
+      if (!value || !value.trim()) {
+        return null;
+      }
+      const validAliases = ["pro", "flash", "flash-lite"];
+      const tokens = value
+        .split(",")
+        .map((token) => token.trim())
+        .filter((token) => token.length > 0);
+      const valid = tokens.filter((token) => validAliases.includes(token));
+      if (valid.length === 0) {
+        return `No valid aliases found; must include at least one of: ${validAliases.join(", ")}`;
+      }
+      return null;
+    },
+  },
 ];
 
 function parseEnvFile(filePath) {
@@ -187,6 +207,7 @@ function validateRequiredVars(envVars, hasEnvFile) {
 
 function validateOptionalVars(envVars) {
   console.log("\nChecking optional environment variables...\n");
+  let success = true;
 
   for (const envVar of OPTIONAL_ENV_VARS) {
     const value = getValue(envVars, envVar.name);
@@ -200,11 +221,14 @@ function validateOptionalVars(envVars) {
     if (validationError) {
       console.error(`INVALID: ${envVar.name}`);
       console.error(`  Issue: ${validationError}`);
+      success = false;
       continue;
     }
 
     console.log(`OK: ${envVar.name}=${value}`);
   }
+
+  return success;
 }
 
 function checkNodeVersion() {
@@ -247,7 +271,7 @@ function main() {
   let success = envVars !== null;
 
   success = validateRequiredVars(envVars || {}, hasEnvFile) && success;
-  validateOptionalVars(envVars || {});
+  success = validateOptionalVars(envVars || {}) && success;
   success = checkNodeVersion() && success;
 
   console.log("\n" + "=".repeat(60));

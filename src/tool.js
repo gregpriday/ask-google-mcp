@@ -1,4 +1,4 @@
-import { DEFAULT_MODEL, MAX_QUESTION_LENGTH, MODEL_ALIASES, VALID_MODELS } from "./config.js";
+import { DEFAULT_MODEL, ENABLED_MODELS, MAX_QUESTION_LENGTH, MODEL_ALIASES } from "./config.js";
 import { createInvalidParamsError } from "./errors.js";
 
 export const ASK_GOOGLE_TOOL = Object.freeze({
@@ -34,11 +34,10 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
       },
       model: {
         type: "string",
-        description:
-          "Gemini model: 'pro' (default) for deeper synthesis, 'flash' for quick lookups, 'flash-lite' for cheapest/fastest simple facts.",
-        enum: VALID_MODELS,
+        description: `Gemini model: 'pro' for deeper synthesis, 'flash' for quick lookups, 'flash-lite' for cheapest/fastest simple facts. Default: '${DEFAULT_MODEL}'.`,
+        enum: ENABLED_MODELS,
         default: DEFAULT_MODEL,
-        examples: VALID_MODELS,
+        examples: ENABLED_MODELS,
       },
     },
     required: ["question"],
@@ -78,9 +77,9 @@ export function validateAskGoogleArguments(rawArgs = {}) {
     }
   }
 
-  if (!VALID_MODELS.includes(model)) {
+  if (!ENABLED_MODELS.includes(model)) {
     throw createInvalidParamsError(
-      `model must be one of: ${VALID_MODELS.join(", ")}. Got: ${model}`
+      `model must be one of: ${ENABLED_MODELS.join(", ")}. Got: ${model}`
     );
   }
 

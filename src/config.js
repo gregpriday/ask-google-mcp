@@ -35,7 +35,74 @@ export const MODEL_ALIASES = {
 };
 
 export const VALID_MODELS = Object.freeze(Object.keys(MODEL_ALIASES));
-export const DEFAULT_MODEL = "pro";
+
+export function parseEnabledModels(rawValue, validModels) {
+  if (rawValue === undefined || rawValue === null || rawValue.trim() === "") {
+    return { enabled: [...validModels], unknown: [] };
+  }
+
+  const tokens = rawValue
+    .split(",")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+
+  const seen = new Set();
+  const enabled = [];
+  const unknown = [];
+
+  for (const token of tokens) {
+    if (seen.has(token)) {
+      continue;
+    }
+    seen.add(token);
+
+    if (validModels.includes(token)) {
+      enabled.push(token);
+    } else {
+      unknown.push(token);
+    }
+  }
+
+  return { enabled, unknown };
+}
+
+const { enabled: enabledModels, unknown: unknownAliases } = parseEnabledModels(
+  process.env.ASK_GOOGLE_ENABLED_MODELS,
+  VALID_MODELS
+);
+
+const isDiagnosticFlagInvocation = process.argv
+  .slice(2)
+  .some((arg) => ["--help", "-h", "--version", "-v"].includes(arg));
+
+for (const alias of unknownAliases) {
+  console.error(
+    `[CONFIG] ASK_GOOGLE_ENABLED_MODELS: unknown alias "${alias}" ignored (valid: ${VALID_MODELS.join(", ")})`
+  );
+}
+
+if (enabledModels.length === 0) {
+  console.error(
+    `[FATAL] ASK_GOOGLE_ENABLED_MODELS must include at least one of: ${VALID_MODELS.join(", ")}`
+  );
+  if (!isDiagnosticFlagInvocation) {
+    process.exit(1);
+  }
+  enabledModels.push(...VALID_MODELS);
+}
+
+export const ENABLED_MODELS = Object.freeze(enabledModels);
+
+export const DEFAULT_MODEL = (() => {
+  if (ENABLED_MODELS.includes("pro")) {
+    return "pro";
+  }
+  const fallback = ENABLED_MODELS[0];
+  console.error(
+    `[CONFIG] ASK_GOOGLE_ENABLED_MODELS excludes "pro"; default model falls back to "${fallback}"`
+  );
+  return fallback;
+})();
 export const MAX_QUESTION_LENGTH = 10_000;
 export const MAX_RETRIES = parsePositiveInteger(process.env.ASK_GOOGLE_MAX_RETRIES, 3);
 export const INITIAL_RETRY_DELAY_MS = parsePositiveInteger(

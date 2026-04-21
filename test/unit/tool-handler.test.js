@@ -9,6 +9,7 @@ import {
   resolveModelId,
   validateAskGoogleArguments,
 } from "../../src/tool.js";
+import { parseEnabledModels, VALID_MODELS } from "../../src/config.js";
 import { createAskGoogleHandler } from "../../src/ask-google.js";
 import { retryWithBackoff } from "../../src/retry.js";
 
@@ -65,6 +66,58 @@ function createHandler(options = {}) {
 
   return { handler, createdModels };
 }
+
+describe("parseEnabledModels", () => {
+  it("returns all models when the env value is undefined", () => {
+    const result = parseEnabledModels(undefined, VALID_MODELS);
+    assert.deepStrictEqual(result.enabled, [...VALID_MODELS]);
+    assert.deepStrictEqual(result.unknown, []);
+  });
+
+  it("treats null and empty/whitespace values as unset", () => {
+    for (const value of [null, "", "   "]) {
+      const result = parseEnabledModels(value, VALID_MODELS);
+      assert.deepStrictEqual(result.enabled, [...VALID_MODELS]);
+      assert.deepStrictEqual(result.unknown, []);
+    }
+  });
+
+  it("parses a single valid alias", () => {
+    const result = parseEnabledModels("flash", VALID_MODELS);
+    assert.deepStrictEqual(result.enabled, ["flash"]);
+    assert.deepStrictEqual(result.unknown, []);
+  });
+
+  it("parses a comma-separated list preserving first-occurrence order", () => {
+    const result = parseEnabledModels("flash, pro", VALID_MODELS);
+    assert.deepStrictEqual(result.enabled, ["flash", "pro"]);
+    assert.deepStrictEqual(result.unknown, []);
+  });
+
+  it("partitions unknown aliases away from valid ones", () => {
+    const result = parseEnabledModels("flash,bogus", VALID_MODELS);
+    assert.deepStrictEqual(result.enabled, ["flash"]);
+    assert.deepStrictEqual(result.unknown, ["bogus"]);
+  });
+
+  it("reports all tokens as unknown when none match", () => {
+    const result = parseEnabledModels("bogus,alsobad", VALID_MODELS);
+    assert.deepStrictEqual(result.enabled, []);
+    assert.deepStrictEqual(result.unknown, ["bogus", "alsobad"]);
+  });
+
+  it("deduplicates and drops blank tokens", () => {
+    const result = parseEnabledModels("flash,,pro,flash", VALID_MODELS);
+    assert.deepStrictEqual(result.enabled, ["flash", "pro"]);
+    assert.deepStrictEqual(result.unknown, []);
+  });
+
+  it("is case-sensitive (uppercase tokens are unknown)", () => {
+    const result = parseEnabledModels("FLASH", VALID_MODELS);
+    assert.deepStrictEqual(result.enabled, []);
+    assert.deepStrictEqual(result.unknown, ["FLASH"]);
+  });
+});
 
 describe("validateAskGoogleArguments", () => {
   it("rejects missing question", () => {
