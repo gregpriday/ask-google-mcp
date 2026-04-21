@@ -47,7 +47,6 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
         examples: ENABLED_MODELS,
       },
     },
-    anyOf: [{ required: ["question"] }, { required: ["query"] }],
   },
 });
 

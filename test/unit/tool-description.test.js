@@ -17,10 +17,12 @@ describe("ask_google tool definition", () => {
 
   it("keeps the schema strict", () => {
     assert.strictEqual(ASK_GOOGLE_TOOL.inputSchema.additionalProperties, false);
-    assert.deepStrictEqual(ASK_GOOGLE_TOOL.inputSchema.anyOf, [
-      { required: ["question"] },
-      { required: ["query"] },
-    ]);
+  });
+
+  it("avoids top-level anyOf/oneOf/allOf (unsupported by Claude API tool schemas)", () => {
+    assert.strictEqual(ASK_GOOGLE_TOOL.inputSchema.anyOf, undefined);
+    assert.strictEqual(ASK_GOOGLE_TOOL.inputSchema.oneOf, undefined);
+    assert.strictEqual(ASK_GOOGLE_TOOL.inputSchema.allOf, undefined);
   });
 
   it("exposes 'query' as an alias for 'question'", () => {
