@@ -207,6 +207,7 @@ function validateRequiredVars(envVars, hasEnvFile) {
 
 function validateOptionalVars(envVars) {
   console.log("\nChecking optional environment variables...\n");
+  let success = true;
 
   for (const envVar of OPTIONAL_ENV_VARS) {
     const value = getValue(envVars, envVar.name);
@@ -220,11 +221,14 @@ function validateOptionalVars(envVars) {
     if (validationError) {
       console.error(`INVALID: ${envVar.name}`);
       console.error(`  Issue: ${validationError}`);
+      success = false;
       continue;
     }
 
     console.log(`OK: ${envVar.name}=${value}`);
   }
+
+  return success;
 }
 
 function checkNodeVersion() {
@@ -267,7 +271,7 @@ function main() {
   let success = envVars !== null;
 
   success = validateRequiredVars(envVars || {}, hasEnvFile) && success;
-  validateOptionalVars(envVars || {});
+  success = validateOptionalVars(envVars || {}) && success;
   success = checkNodeVersion() && success;
 
   console.log("\n" + "=".repeat(60));

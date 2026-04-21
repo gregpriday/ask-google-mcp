@@ -71,6 +71,10 @@ const { enabled: enabledModels, unknown: unknownAliases } = parseEnabledModels(
   VALID_MODELS
 );
 
+const isDiagnosticFlagInvocation = process.argv
+  .slice(2)
+  .some((arg) => ["--help", "-h", "--version", "-v"].includes(arg));
+
 for (const alias of unknownAliases) {
   console.error(
     `[CONFIG] ASK_GOOGLE_ENABLED_MODELS: unknown alias "${alias}" ignored (valid: ${VALID_MODELS.join(", ")})`
@@ -81,7 +85,10 @@ if (enabledModels.length === 0) {
   console.error(
     `[FATAL] ASK_GOOGLE_ENABLED_MODELS must include at least one of: ${VALID_MODELS.join(", ")}`
   );
-  process.exit(1);
+  if (!isDiagnosticFlagInvocation) {
+    process.exit(1);
+  }
+  enabledModels.push(...VALID_MODELS);
 }
 
 export const ENABLED_MODELS = Object.freeze(enabledModels);

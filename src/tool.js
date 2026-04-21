@@ -34,8 +34,7 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
       },
       model: {
         type: "string",
-        description:
-          "Gemini model: 'pro' (default) for deeper synthesis, 'flash' for quick lookups, 'flash-lite' for cheapest/fastest simple facts.",
+        description: `Gemini model: 'pro' for deeper synthesis, 'flash' for quick lookups, 'flash-lite' for cheapest/fastest simple facts. Default: '${DEFAULT_MODEL}'.`,
         enum: ENABLED_MODELS,
         default: DEFAULT_MODEL,
         examples: ENABLED_MODELS,
