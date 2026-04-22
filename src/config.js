@@ -122,7 +122,9 @@ export const OVERALL_BUDGET_MS = parsePositiveInteger(
 // pathologically drip-feeds tokens; the inactivity timeout should catch real stalls long before.
 // Actual value is min of this, remaining budget, and any requestTimeoutMs override.
 export const MODEL_TIMEOUTS_MS = Object.freeze({
-  pro: parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_PRO_MS, 180_000),
+  // Pro's 120s ceiling (not 180s) keeps 3 attempts fitting inside the 300s overall budget
+  // even in the unlikely pathological case where every attempt runs to its hard cap.
+  pro: parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_PRO_MS, 120_000),
   flash: parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_FLASH_MS, 60_000),
   "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_FLASH_LITE_MS, 30_000),
 });
@@ -133,7 +135,7 @@ export const MODEL_TIMEOUTS_MS = Object.freeze({
 export const MODEL_TTFT_TIMEOUTS_MS = Object.freeze({
   pro: parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_PRO_MS, 45_000),
   flash: parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_FLASH_MS, 10_000),
-  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_FLASH_LITE_MS, 8_000),
+  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_FLASH_LITE_MS, 12_000),
 });
 
 // Per-model INTER-CHUNK INACTIVITY timeout. Once streaming has started, this resets with every

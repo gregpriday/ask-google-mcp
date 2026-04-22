@@ -289,6 +289,7 @@ export function createAskGoogleHandler({
             tools: [{ googleSearch: {} }],
           });
 
+          let lastProgressEmitAt = 0;
           const result = await streamWithTimeouts(generativeModel, question, {
             ttftMs,
             inactivityMs,
@@ -297,9 +298,11 @@ export function createAskGoogleHandler({
             attemptLabel,
             onProgress: notifyProgress
               ? ({ charCount, elapsedMs }) => {
-                  // Throttle: only emit every ~20 chunks or every 500 chars, whichever fires first,
-                  // to avoid flooding the client on long streams.
-                  if (charCount > 0 && (charCount % 500 < 20)) {
+                  // Time-based throttle: emit at most once per second. This is predictable
+                  // regardless of chunk size (a 500-char chunk counts the same as a 5-char chunk).
+                  const now = Date.now();
+                  if (charCount > 0 && now - lastProgressEmitAt >= 1_000) {
+                    lastProgressEmitAt = now;
                     emitProgress(
                       `Streaming response · ${charCount} chars · ${(elapsedMs / 1000).toFixed(1)}s`
                     );
