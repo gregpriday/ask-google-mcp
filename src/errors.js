@@ -1,5 +1,15 @@
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 
+// Finish reasons that represent permanent model-side refusals — retrying will not help.
+const PERMANENT_FINISH_REASONS = new Set([
+  "SAFETY",
+  "RECITATION",
+  "BLOCKLIST",
+  "PROHIBITED_CONTENT",
+  "SPII",
+  "OTHER",
+]);
+
 function lowerCaseMessage(error) {
   return String(error?.message || error || "").toLowerCase();
 }
@@ -12,7 +22,19 @@ export function createInternalError(message) {
   return new McpError(ErrorCode.InternalError, message);
 }
 
+export function isPermanentFinishReason(finishReason) {
+  if (!finishReason) {
+    return false;
+  }
+  return PERMANENT_FINISH_REASONS.has(String(finishReason).toUpperCase());
+}
+
 export function isRetryableGeminiError(error) {
+  // An error carrying a permanent finishReason should not be retried.
+  if (error?.finishReason && isPermanentFinishReason(error.finishReason)) {
+    return false;
+  }
+
   const message = lowerCaseMessage(error);
 
   if (
@@ -29,6 +51,8 @@ export function isRetryableGeminiError(error) {
     message.includes("invalid argument") ||
     message.includes("not found") ||
     message.includes("safety") ||
+    message.includes("recitation") ||
+    message.includes("blocklist") ||
     message.includes("blocked")
   ) {
     return false;
@@ -40,6 +64,10 @@ export function isRetryableGeminiError(error) {
 export function classifyGeminiError(error) {
   const message = String(error?.message || "Generation failed");
   const lowerMessage = message.toLowerCase();
+
+  if (error?.finishReason && isPermanentFinishReason(error.finishReason)) {
+    return `[CONTENT_BLOCKED] Gemini refused to answer (finishReason=${error.finishReason}): ${message}`;
+  }
 
   if (
     lowerMessage.includes("api key") ||
@@ -61,12 +89,24 @@ export function classifyGeminiError(error) {
   }
 
   if (
+    lowerMessage.includes("ttft") ||
+    lowerMessage.includes("first token") ||
+    lowerMessage.includes("stalled")
+  ) {
+    return `[STALL_ERROR] Gemini stream stalled before first token: ${message}`;
+  }
+
+  if (
     lowerMessage.includes("timeout") ||
     lowerMessage.includes("timed out") ||
     lowerMessage.includes("aborted") ||
     lowerMessage.includes("aborterror")
   ) {
     return `[TIMEOUT_ERROR] Request timed out: ${message}`;
+  }
+
+  if (lowerMessage.includes("budget")) {
+    return `[BUDGET_EXHAUSTED] Retry budget exhausted before a successful response: ${message}`;
   }
 
   return `[API_ERROR] Gemini API error: ${message}`;

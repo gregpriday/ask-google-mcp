@@ -134,7 +134,10 @@ export function extractGroundingData(response) {
   return { sources, searches };
 }
 
-export function buildToolText(text, { sources = [], searches = [], fileWriteError } = {}) {
+export function buildToolText(
+  text,
+  { sources = [], searches = [], fileWriteError, diagnostics } = {}
+) {
   let fullResponse = text;
 
   if (sources.length > 0) {
@@ -155,5 +158,34 @@ export function buildToolText(text, { sources = [], searches = [], fileWriteErro
     fullResponse += `\n\n---\n**Note:** ${fileWriteError}`;
   }
 
+  if (diagnostics) {
+    fullResponse += `\n\n---\n${formatDiagnostics(diagnostics)}`;
+  }
+
   return fullResponse;
+}
+
+export function formatDiagnostics({
+  model,
+  fellBack = false,
+  attempts,
+  totalAttempts,
+  durationMs,
+  ttftMs,
+}) {
+  const parts = [];
+  const modelLabel = fellBack ? `${model} (fallback)` : model;
+  if (modelLabel) {
+    parts.push(`model=${modelLabel}`);
+  }
+  if (attempts && totalAttempts) {
+    parts.push(`attempts=${attempts}/${totalAttempts}`);
+  }
+  if (typeof durationMs === "number") {
+    parts.push(`duration=${(durationMs / 1000).toFixed(1)}s`);
+  }
+  if (typeof ttftMs === "number") {
+    parts.push(`ttft=${(ttftMs / 1000).toFixed(1)}s`);
+  }
+  return `_diagnostics: ${parts.join(" · ")}_`;
 }

@@ -104,15 +104,56 @@ export const DEFAULT_MODEL = (() => {
   return fallback;
 })();
 export const MAX_QUESTION_LENGTH = 10_000;
-export const MAX_RETRIES = parsePositiveInteger(process.env.ASK_GOOGLE_MAX_RETRIES, 3);
+export const MAX_RETRIES = parsePositiveInteger(process.env.ASK_GOOGLE_MAX_RETRIES, 2);
 export const INITIAL_RETRY_DELAY_MS = parsePositiveInteger(
   process.env.ASK_GOOGLE_INITIAL_RETRY_DELAY_MS,
   1_000
 );
-export const REQUEST_TIMEOUT_MS = parsePositiveInteger(
-  process.env.ASK_GOOGLE_TIMEOUT_MS,
+
+// Overall budget across all attempts + backoffs. Should match or fit under the MCP client's
+// tool-call timeout — configure your client's tool timeout to at least this value, otherwise
+// it will cut us off before late retries or the flash fallback can complete.
+export const OVERALL_BUDGET_MS = parsePositiveInteger(
+  process.env.ASK_GOOGLE_OVERALL_BUDGET_MS,
   300_000
 );
+
+// Per-model overall attempt timeout (upper bound — actual value is min of this and remaining budget).
+export const MODEL_TIMEOUTS_MS = Object.freeze({
+  pro: parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_PRO_MS, 90_000),
+  flash: parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_FLASH_MS, 30_000),
+  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_FLASH_LITE_MS, 15_000),
+});
+
+// Per-model time-to-first-token timeout. If the first streamed chunk doesn't arrive within
+// this window, abort the request and retry — this catches hangs far earlier than the overall
+// timeout. Pro uses a deliberately long TTFT because Gemini 3 Pro's "Deep Think" reasoning
+// delays initial output.
+export const MODEL_TTFT_TIMEOUTS_MS = Object.freeze({
+  pro: parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_PRO_MS, 45_000),
+  flash: parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_FLASH_MS, 10_000),
+  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_FLASH_LITE_MS, 8_000),
+});
+
+// Kept for backward compatibility with callers that want a single generic timeout
+// (tests and overrides). Actual per-attempt timeout is resolved per-model.
+export const REQUEST_TIMEOUT_MS = parsePositiveInteger(
+  process.env.ASK_GOOGLE_TIMEOUT_MS,
+  60_000
+);
+
+// If the user requested pro and attempts 1/2 failed, attempt 3 falls back to this model.
+// flash-only and flash-lite-only users don't get downgraded further.
+export const FALLBACK_MODEL = (() => {
+  const raw = process.env.ASK_GOOGLE_FALLBACK_MODEL || "flash";
+  if (!VALID_MODELS.includes(raw)) {
+    console.error(
+      `[CONFIG] ASK_GOOGLE_FALLBACK_MODEL="${raw}" is not a valid alias; using "flash"`
+    );
+    return "flash";
+  }
+  return raw;
+})();
 export const FILE_OUTPUT_ENABLED = process.env.ASK_GOOGLE_ALLOW_FILE_OUTPUT === "true";
 export const FILE_OUTPUT_BASE_DIR = resolve(
   process.env.ASK_GOOGLE_OUTPUT_DIR || process.cwd()

@@ -20,7 +20,15 @@ function printHelp() {
   console.log("It is intended to be used as a tool provider for MCP-compatible clients.\n");
   console.log("Environment variables:");
   console.log("  GOOGLE_API_KEY                  Google AI API key (required for tool calls)");
-  console.log("  ASK_GOOGLE_TIMEOUT_MS           Per-request timeout in milliseconds");
+  console.log("  ASK_GOOGLE_OVERALL_BUDGET_MS    Total budget across all retries (default: 300000)");
+  console.log("  ASK_GOOGLE_TIMEOUT_PRO_MS       Per-attempt cap for pro (default: 90000)");
+  console.log("  ASK_GOOGLE_TIMEOUT_FLASH_MS     Per-attempt cap for flash (default: 30000)");
+  console.log("  ASK_GOOGLE_TIMEOUT_FLASH_LITE_MS Per-attempt cap for flash-lite (default: 15000)");
+  console.log("  ASK_GOOGLE_TTFT_PRO_MS          Time-to-first-token cutoff for pro (default: 45000)");
+  console.log("  ASK_GOOGLE_TTFT_FLASH_MS        Time-to-first-token cutoff for flash (default: 10000)");
+  console.log("  ASK_GOOGLE_TTFT_FLASH_LITE_MS   Time-to-first-token cutoff for flash-lite (default: 8000)");
+  console.log("  ASK_GOOGLE_MAX_RETRIES          Retries after the initial attempt (default: 2)");
+  console.log("  ASK_GOOGLE_FALLBACK_MODEL       Model used for last attempt when pro keeps failing (default: flash)");
   console.log("  ASK_GOOGLE_ALLOW_FILE_OUTPUT    Set to true to enable output_file writes");
   console.log("  ASK_GOOGLE_OUTPUT_DIR           Base directory allowed for output_file writes");
   console.log("  ASK_GOOGLE_ENABLED_MODELS       Comma-separated aliases to expose: pro, flash, flash-lite (default: all)\n");
