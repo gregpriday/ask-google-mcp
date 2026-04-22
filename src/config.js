@@ -118,21 +118,32 @@ export const OVERALL_BUDGET_MS = parsePositiveInteger(
   300_000
 );
 
-// Per-model overall attempt timeout (upper bound — actual value is min of this and remaining budget).
+// Per-model HARD CEILING — absolute safety net on a single attempt. This only fires if Gemini
+// pathologically drip-feeds tokens; the inactivity timeout should catch real stalls long before.
+// Actual value is min of this, remaining budget, and any requestTimeoutMs override.
 export const MODEL_TIMEOUTS_MS = Object.freeze({
-  pro: parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_PRO_MS, 90_000),
-  flash: parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_FLASH_MS, 30_000),
-  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_FLASH_LITE_MS, 15_000),
+  pro: parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_PRO_MS, 180_000),
+  flash: parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_FLASH_MS, 60_000),
+  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_FLASH_LITE_MS, 30_000),
 });
 
-// Per-model time-to-first-token timeout. If the first streamed chunk doesn't arrive within
-// this window, abort the request and retry — this catches hangs far earlier than the overall
-// timeout. Pro uses a deliberately long TTFT because Gemini 3 Pro's "Deep Think" reasoning
-// delays initial output.
+// Per-model TIME-TO-FIRST-TOKEN cutoff. If no chunk arrives in this window, the stream is
+// hung before any output — abort and retry. Pro's TTFT is generous because Gemini 3 Pro's
+// Deep Think reasoning delays initial output.
 export const MODEL_TTFT_TIMEOUTS_MS = Object.freeze({
   pro: parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_PRO_MS, 45_000),
   flash: parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_FLASH_MS, 10_000),
   "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_FLASH_LITE_MS, 8_000),
+});
+
+// Per-model INTER-CHUNK INACTIVITY timeout. Once streaming has started, this resets with every
+// chunk received. If no new chunk arrives within this window, the stream is considered stalled.
+// Pro's threshold is large because Deep Think can pause 15-30s mid-stream without emitting
+// tokens. Flash/flash-lite don't do Deep Think, so tighter thresholds are safe.
+export const MODEL_INACTIVITY_TIMEOUTS_MS = Object.freeze({
+  pro: parsePositiveInteger(process.env.ASK_GOOGLE_INACTIVITY_PRO_MS, 45_000),
+  flash: parsePositiveInteger(process.env.ASK_GOOGLE_INACTIVITY_FLASH_MS, 15_000),
+  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_INACTIVITY_FLASH_LITE_MS, 10_000),
 });
 
 // Kept for backward compatibility with callers that want a single generic timeout

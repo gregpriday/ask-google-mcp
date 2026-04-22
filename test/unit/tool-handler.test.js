@@ -77,7 +77,17 @@ class MockGenerativeModel {
           });
         }
         if (i > 0 && step.interChunkDelayMs) {
-          await new Promise((resolve) => setTimeout(resolve, step.interChunkDelayMs));
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(resolve, step.interChunkDelayMs);
+            signal?.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timer);
+                reject(new Error("Aborted"));
+              },
+              { once: true }
+            );
+          });
         }
         const chunkText = chunks[i];
         yield { text: () => chunkText };
@@ -109,6 +119,8 @@ function createHandler(options = {}) {
     overallBudgetMs: options.overallBudgetMs ?? 5_000,
     modelTimeoutsMs: options.modelTimeoutsMs ?? { pro: 1_000, flash: 500, "flash-lite": 300 },
     modelTtftTimeoutsMs: options.modelTtftTimeoutsMs ?? { pro: 500, flash: 300, "flash-lite": 200 },
+    modelInactivityTimeoutsMs:
+      options.modelInactivityTimeoutsMs ?? { pro: 500, flash: 300, "flash-lite": 200 },
     fallbackModel: options.fallbackModel ?? "flash",
     requestTimeoutMs: options.requestTimeoutMs,
     maxRetries: options.maxRetries ?? 2,
@@ -597,5 +609,97 @@ describe("createAskGoogleHandler", () => {
       handler({ question: "save this", output_file: "answer.md" }),
       /output_file is disabled/
     );
+  });
+
+  it("does NOT abort a long-but-actively-streaming response", async () => {
+    // Three chunks, each 50ms apart, total stream time ~150ms. Inactivity budget is 100ms —
+    // larger than any single inter-chunk gap, so the response should complete successfully
+    // even though total time exceeds the per-chunk threshold.
+    const { handler } = createHandler({
+      modelTimeoutsMs: { pro: 5_000, flash: 5_000, "flash-lite": 5_000 },
+      modelTtftTimeoutsMs: { pro: 200, flash: 200, "flash-lite": 200 },
+      modelInactivityTimeoutsMs: { pro: 100, flash: 100, "flash-lite": 100 },
+      plan: {
+        script: [
+          { chunks: ["slow ", "but ", "steady"], firstChunkDelayMs: 20, interChunkDelayMs: 50 },
+        ],
+      },
+    });
+
+    const result = await handler({ question: "stream me" });
+    assert.match(result.content[0].text, /slow but steady/);
+  });
+
+  it("aborts when the stream goes silent mid-response (inactivity timeout)", async () => {
+    const { handler, createdModels } = createHandler({
+      modelTimeoutsMs: { pro: 5_000, flash: 5_000, "flash-lite": 5_000 },
+      modelTtftTimeoutsMs: { pro: 200, flash: 200, "flash-lite": 200 },
+      modelInactivityTimeoutsMs: { pro: 50, flash: 50, "flash-lite": 50 },
+      plan: {
+        script: [
+          // First chunk arrives fast, but second chunk is delayed 300ms — way beyond the
+          // 50ms inactivity threshold.
+          { chunks: ["hello ", "world"], firstChunkDelayMs: 10, interChunkDelayMs: 300 },
+          { chunks: ["recovered"] },
+        ],
+      },
+    });
+
+    const result = await handler({ question: "stalled mid stream" });
+    assert.match(result.content[0].text, /recovered/);
+    assert.strictEqual(createdModels.length, 2);
+  });
+
+  it("emits MCP progress notifications when a progressToken is provided", async () => {
+    const notifications = [];
+    const { handler } = createHandler({
+      plan: { defaultStep: { text: "done" } },
+    });
+
+    const notifyProgress = (payload) => notifications.push(payload);
+    await handler({ question: "notify me" }, { notifyProgress });
+
+    assert.ok(
+      notifications.length >= 1,
+      `expected at least one progress notification, got ${notifications.length}`
+    );
+    // First notification announces the attempt; progress counters must be strictly increasing.
+    for (let i = 1; i < notifications.length; i += 1) {
+      assert.ok(
+        notifications[i].progress > notifications[i - 1].progress,
+        "progress values must strictly increase"
+      );
+    }
+    assert.match(notifications[0].message, /Attempt 1\/3 via pro/);
+  });
+
+  it("does not emit progress notifications when no callback is supplied", async () => {
+    // Just verify the handler works end-to-end with no progress callback (default path).
+    const { handler } = createHandler();
+    const result = await handler({ question: "silent" });
+    assert.match(result.content[0].text, /silent/);
+  });
+
+  it("announces fallback in the progress notification on attempt 3", async () => {
+    const notifications = [];
+    const { handler } = createHandler({
+      maxRetries: 2,
+      plan: {
+        script: [
+          { throw: "transient 1" },
+          { throw: "transient 2" },
+          { text: "rescued" },
+        ],
+      },
+    });
+
+    await handler(
+      { question: "fallback notify", model: "pro" },
+      { notifyProgress: (p) => notifications.push(p) }
+    );
+
+    const fallbackAnnouncement = notifications.find((n) => /fallback/.test(n.message));
+    assert.ok(fallbackAnnouncement, "expected a progress notification announcing fallback");
+    assert.match(fallbackAnnouncement.message, /Attempt 3\/3 via flash \(fallback\)/);
   });
 });

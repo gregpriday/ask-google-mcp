@@ -6,6 +6,7 @@ import {
   FILE_OUTPUT_ENABLED,
   INITIAL_RETRY_DELAY_MS,
   MAX_RETRIES,
+  MODEL_INACTIVITY_TIMEOUTS_MS,
   MODEL_TIMEOUTS_MS,
   MODEL_TTFT_TIMEOUTS_MS,
   OVERALL_BUDGET_MS,
@@ -41,27 +42,40 @@ function selectAttemptModel({ requestedModel, attempt, totalAttempts, fallbackMo
   return { model: requestedModel, fellBack: false };
 }
 
-// Stream the response with both an overall per-attempt timeout AND a TTFT (time-to-first-token)
-// timeout. TTFT catches the common hang mode where the SDK's underlying fetch stalls before
-// returning any data — we abort fast and let the retry loop try again, rather than sitting
-// for the full overall timeout.
-async function streamWithTimeouts(generativeModel, question, { overallMs, ttftMs, logger, attemptLabel }) {
+// Stream the response under three independent signals:
+//   1. TTFT timer — fires if no first chunk arrives within ttftMs. Cleared on first chunk.
+//   2. Inactivity timer — after first chunk, resets every time a new chunk arrives. Fires if
+//      the stream goes silent for longer than inactivityMs (a real stall, not a slow response).
+//   3. Hard ceiling — absolute upper bound on the attempt. Only triggers on pathological
+//      drip-feeding; the inactivity timer should catch real hangs long before.
+// All three share a single AbortController. Node's undici fetch cleanly severs the TCP
+// connection on abort, so the `for await` loop rejects immediately with an AbortError.
+async function streamWithTimeouts(
+  generativeModel,
+  question,
+  { ttftMs, inactivityMs, hardCeilingMs, logger, attemptLabel, onProgress }
+) {
   const controller = new AbortController();
-  let overallTimer;
   let ttftTimer;
+  let inactivityTimer;
+  let hardCeilingTimer;
   let firstTokenAt;
   let abortReason;
   const attemptStart = Date.now();
 
   const clearTimers = () => {
-    if (overallTimer) clearTimeout(overallTimer);
     if (ttftTimer) clearTimeout(ttftTimer);
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+    if (hardCeilingTimer) clearTimeout(hardCeilingTimer);
   };
 
-  overallTimer = setTimeout(() => {
-    abortReason = "OVERALL_TIMEOUT";
-    controller.abort();
-  }, overallMs);
+  const armInactivity = () => {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+    inactivityTimer = setTimeout(() => {
+      abortReason = "INACTIVITY_TIMEOUT";
+      controller.abort();
+    }, inactivityMs);
+  };
 
   ttftTimer = setTimeout(() => {
     if (firstTokenAt === undefined) {
@@ -70,13 +84,23 @@ async function streamWithTimeouts(generativeModel, question, { overallMs, ttftMs
     }
   }, ttftMs);
 
+  hardCeilingTimer = setTimeout(() => {
+    abortReason = "HARD_CEILING";
+    controller.abort();
+  }, hardCeilingMs);
+
   try {
     const result = await generativeModel.generateContentStream(question, {
       signal: controller.signal,
     });
 
     const textParts = [];
+    let charCount = 0;
+    let chunkIndex = 0;
+
     for await (const chunk of result.stream) {
+      chunkIndex += 1;
+
       if (firstTokenAt === undefined) {
         firstTokenAt = Date.now();
         clearTimeout(ttftTimer);
@@ -84,11 +108,26 @@ async function streamWithTimeouts(generativeModel, question, { overallMs, ttftMs
           `[${attemptLabel}] first_token ttft_ms=${firstTokenAt - attemptStart}`
         );
       }
+
+      armInactivity();
+
       const chunkText = typeof chunk.text === "function" ? chunk.text() : "";
       if (chunkText) {
         textParts.push(chunkText);
+        charCount += chunkText.length;
+      }
+
+      if (onProgress) {
+        onProgress({
+          chunkIndex,
+          charCount,
+          elapsedMs: Date.now() - attemptStart,
+        });
       }
     }
+
+    // Stream ended cleanly — no more chunks coming, so inactivity timer is no longer relevant.
+    if (inactivityTimer) clearTimeout(inactivityTimer);
 
     const finalResponse = await result.response;
     const text =
@@ -100,6 +139,8 @@ async function streamWithTimeouts(generativeModel, question, { overallMs, ttftMs
       response: finalResponse,
       firstTokenMs: firstTokenAt !== undefined ? firstTokenAt - attemptStart : null,
       durationMs: Date.now() - attemptStart,
+      charCount,
+      chunkCount: chunkIndex,
     };
   } catch (error) {
     if (abortReason === "TTFT_TIMEOUT") {
@@ -107,8 +148,15 @@ async function streamWithTimeouts(generativeModel, question, { overallMs, ttftMs
       err.code = "TTFT_TIMEOUT";
       throw err;
     }
-    if (abortReason === "OVERALL_TIMEOUT") {
-      throw new Error(`Request timed out after ${overallMs}ms`);
+    if (abortReason === "INACTIVITY_TIMEOUT") {
+      const err = new Error(
+        `[INACTIVITY_TIMEOUT] Stream went silent for ${inactivityMs}ms mid-response`
+      );
+      err.code = "INACTIVITY_TIMEOUT";
+      throw err;
+    }
+    if (abortReason === "HARD_CEILING") {
+      throw new Error(`Request exceeded hard ceiling of ${hardCeilingMs}ms`);
     }
     throw error;
   } finally {
@@ -123,6 +171,7 @@ export function createAskGoogleHandler({
   overallBudgetMs = OVERALL_BUDGET_MS,
   modelTimeoutsMs = MODEL_TIMEOUTS_MS,
   modelTtftTimeoutsMs = MODEL_TTFT_TIMEOUTS_MS,
+  modelInactivityTimeoutsMs = MODEL_INACTIVITY_TIMEOUTS_MS,
   fallbackModel = FALLBACK_MODEL,
   // requestTimeoutMs is retained for tests/overrides — when supplied, it acts as a global
   // ceiling on every model's per-attempt timeout.
@@ -163,13 +212,27 @@ export function createAskGoogleHandler({
     return Math.max(MIN_ATTEMPT_BUDGET_MS, Math.min(...caps));
   }
 
-  return async function handleAskGoogle(rawArgs = {}) {
+  return async function handleAskGoogle(rawArgs = {}, { notifyProgress = null } = {}) {
     const { question, outputFile, model: requestedModel = DEFAULT_MODEL } =
       validateAskGoogleArguments(rawArgs);
     const outputPath = resolveOutputPath(outputFile, {
       enabled: fileOutputEnabled,
       baseDir: fileOutputBaseDir,
     });
+
+    // MCP requires progress values to monotonically increase across a single tool call.
+    // Using a rolling counter means retries and the inside-attempt chunk counter can both
+    // contribute without ever going backwards.
+    let progressCounter = 0;
+    const emitProgress = (message) => {
+      if (!notifyProgress) return;
+      progressCounter += 1;
+      try {
+        notifyProgress({ progress: progressCounter, message });
+      } catch (err) {
+        logger.error(`[PROGRESS] notification failed: ${err.message}`);
+      }
+    };
 
     const startedAt = Date.now();
     const diagnostics = {
@@ -199,16 +262,25 @@ export function createAskGoogleHandler({
           diagnostics.model = attemptModel;
           diagnostics.fellBack = fellBack;
           const modelId = resolveModelId(attemptModel);
-          const overallMs = resolveAttemptTimeout(attemptModel, remainingBudgetMs);
+          const hardCeilingMs = resolveAttemptTimeout(attemptModel, remainingBudgetMs);
           const ttftMs = Math.min(
-            modelTtftTimeoutsMs[attemptModel] ?? overallMs,
-            Math.max(1_000, overallMs - 1_000)
+            modelTtftTimeoutsMs[attemptModel] ?? hardCeilingMs,
+            Math.max(1_000, hardCeilingMs - 1_000)
+          );
+          const inactivityMs = Math.min(
+            modelInactivityTimeoutsMs[attemptModel] ?? hardCeilingMs,
+            Math.max(1_000, hardCeilingMs - 1_000)
           );
           const attemptLabel = `ATTEMPT ${attempt}/${totalAttempts}`;
 
           logger.error(
             `[${attemptLabel}] model=${attemptModel}${fellBack ? "(fallback)" : ""} ` +
-              `timeout_ms=${overallMs} ttft_ms=${ttftMs} remaining_budget_ms=${remainingBudgetMs}`
+              `ceiling_ms=${hardCeilingMs} ttft_ms=${ttftMs} inactivity_ms=${inactivityMs} ` +
+              `remaining_budget_ms=${remainingBudgetMs}`
+          );
+
+          emitProgress(
+            `Attempt ${attempt}/${totalAttempts} via ${attemptModel}${fellBack ? " (fallback)" : ""}...`
           );
 
           const generativeModel = client.getGenerativeModel({
@@ -218,10 +290,22 @@ export function createAskGoogleHandler({
           });
 
           const result = await streamWithTimeouts(generativeModel, question, {
-            overallMs,
             ttftMs,
+            inactivityMs,
+            hardCeilingMs,
             logger,
             attemptLabel,
+            onProgress: notifyProgress
+              ? ({ charCount, elapsedMs }) => {
+                  // Throttle: only emit every ~20 chunks or every 500 chars, whichever fires first,
+                  // to avoid flooding the client on long streams.
+                  if (charCount > 0 && (charCount % 500 < 20)) {
+                    emitProgress(
+                      `Streaming response · ${charCount} chars · ${(elapsedMs / 1000).toFixed(1)}s`
+                    );
+                  }
+                }
+              : null,
           });
 
           const finishReason = result.response?.candidates?.[0]?.finishReason;
