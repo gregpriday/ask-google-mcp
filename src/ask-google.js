@@ -94,6 +94,16 @@ async function streamWithTimeouts(
       signal: controller.signal,
     });
 
+    // Safety net: the SDK's `result.response` promise is separate from the stream iterator.
+    // If we abort mid-stream and throw before reaching `await result.response`, that promise
+    // will reject with AbortError and — with no handler attached — becomes an unhandled
+    // rejection, which our process-level handler turns into process.exit(1). Attach a no-op
+    // catch now so the rejection is considered handled; any real error still surfaces via the
+    // `await result.response` call on the happy path.
+    if (result?.response && typeof result.response.catch === "function") {
+      result.response.catch(() => {});
+    }
+
     const textParts = [];
     let charCount = 0;
     let chunkIndex = 0;
