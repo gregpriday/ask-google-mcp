@@ -3,8 +3,6 @@ import {
   DEFAULT_MODEL,
   ENABLED_MODELS,
   FALLBACK_MODEL,
-  FILE_OUTPUT_BASE_DIR,
-  FILE_OUTPUT_ENABLED,
   INITIAL_RETRY_DELAY_MS,
   MAX_RETRIES,
   MODEL_INACTIVITY_TIMEOUTS_MS,
@@ -23,7 +21,6 @@ import {
   isPermanentFinishReason,
   isRetryableGeminiError,
 } from "./errors.js";
-import { resolveOutputPath, writeResponseToFile } from "./file-output.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { retryWithBackoff } from "./retry.js";
 import { createRouter } from "./router.js";
@@ -229,8 +226,6 @@ export function createAskGoogleHandler({
   maxRetries = MAX_RETRIES,
   initialRetryDelayMs = INITIAL_RETRY_DELAY_MS,
   minAttemptBudgetMs = MIN_ATTEMPT_BUDGET_MS,
-  fileOutputEnabled = FILE_OUTPUT_ENABLED,
-  fileOutputBaseDir = FILE_OUTPUT_BASE_DIR,
   getApiKey = () => process.env.GOOGLE_API_KEY,
   createClient = (apiKey) => new GoogleGenAI({ apiKey }),
   // Router is optional and injectable for testing. If not provided, we build a default one
@@ -291,12 +286,8 @@ export function createAskGoogleHandler({
   }
 
   return async function handleAskGoogle(rawArgs = {}, { notifyProgress = null } = {}) {
-    const { question, outputFile, model: requestedModel = DEFAULT_MODEL } =
+    const { question, model: requestedModel = DEFAULT_MODEL } =
       validateAskGoogleArguments(rawArgs);
-    const outputPath = resolveOutputPath(outputFile, {
-      enabled: fileOutputEnabled,
-      baseDir: fileOutputBaseDir,
-    });
 
     // MCP requires progress values to monotonically increase across a single tool call.
     // Using a rolling counter means retries and the inside-attempt chunk counter can both
@@ -506,8 +497,7 @@ export function createAskGoogleHandler({
         );
       }
 
-      let fileWriteError;
-      let fullResponse = buildToolText(streamResult.text, {
+      const fullResponse = buildToolText(streamResult.text, {
         sources,
         searches,
         supports,
@@ -515,30 +505,11 @@ export function createAskGoogleHandler({
         diagnostics,
       });
 
-      if (outputPath) {
-        try {
-          writeResponseToFile(outputPath, fullResponse);
-          logger.error(`[FILE_OUTPUT] Successfully wrote response to: ${outputPath}`);
-        } catch (error) {
-          logger.error(`[FILE_OUTPUT] Failed to write to ${outputPath}: ${error.message}`);
-          fileWriteError = `Failed to write to file '${outputPath}': ${error.message}`;
-          fullResponse = buildToolText(streamResult.text, {
-            sources,
-            searches,
-            supports,
-            groundingStatus,
-            fileWriteError,
-            diagnostics,
-          });
-        }
-      }
-
       const structuredContent = buildStructuredContent(streamResult.text, {
         sources,
         searches,
         supports,
         groundingStatus,
-        fileWriteError,
         diagnostics,
       });
 

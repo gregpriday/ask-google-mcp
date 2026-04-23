@@ -54,13 +54,6 @@ describe("ask_google tool definition", () => {
     );
   });
 
-  it("documents that output_file is gated by configuration", () => {
-    assert.match(
-      ASK_GOOGLE_TOOL.inputSchema.properties.output_file.description,
-      /ASK_GOOGLE_ALLOW_FILE_OUTPUT=true/
-    );
-  });
-
   it("publishes MCP tool annotations for read-only/idempotent/open-world behavior", () => {
     const a = ASK_GOOGLE_TOOL.annotations;
     assert.ok(a, "expected annotations on the tool card");

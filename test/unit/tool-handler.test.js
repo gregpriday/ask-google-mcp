@@ -1,8 +1,5 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
 import {
   applyInlineCitations,
   buildStructuredContent,
@@ -162,8 +159,6 @@ function createHandler(options = {}) {
     maxRetries: options.maxRetries ?? 2,
     initialRetryDelayMs: options.initialRetryDelayMs ?? 1,
     minAttemptBudgetMs: options.minAttemptBudgetMs,
-    fileOutputEnabled: options.fileOutputEnabled ?? false,
-    fileOutputBaseDir: options.fileOutputBaseDir,
     getApiKey: options.getApiKey || (() => "test-api-key"),
     createClient: () => ({
       models: createMockModels(planState),
@@ -237,10 +232,6 @@ describe("validateAskGoogleArguments", () => {
     assert.throws(() => validateAskGoogleArguments({ question: 123 }), /Question must be a string/);
     assert.throws(() => validateAskGoogleArguments({ question: "   " }), /Question cannot be empty/);
     assert.throws(
-      () => validateAskGoogleArguments({ question: "ok", output_file: 123 }),
-      /output_file must be a string/
-    );
-    assert.throws(
       () => validateAskGoogleArguments({ question: "ok", model: "FLASH" }),
       /model must be one of/
     );
@@ -250,7 +241,6 @@ describe("validateAskGoogleArguments", () => {
     // Default model is "auto" when the router is available (the production default).
     assert.deepStrictEqual(validateAskGoogleArguments({ question: "test" }), {
       question: "test",
-      outputFile: undefined,
       model: "auto",
     });
   });
@@ -258,7 +248,6 @@ describe("validateAskGoogleArguments", () => {
   it("accepts 'query' as an alias for 'question'", () => {
     assert.deepStrictEqual(validateAskGoogleArguments({ query: "test" }), {
       question: "test",
-      outputFile: undefined,
       model: "auto",
     });
   });
@@ -266,7 +255,6 @@ describe("validateAskGoogleArguments", () => {
   it("accepts 'auto' as a model value", () => {
     assert.deepStrictEqual(validateAskGoogleArguments({ question: "test", model: "auto" }), {
       question: "test",
-      outputFile: undefined,
       model: "auto",
     });
   });
@@ -440,17 +428,15 @@ describe("tool helpers", () => {
     assert.strictEqual(sc.diagnostics.supports_count, 0);
   });
 
-  it("formats appended metadata and notes", () => {
+  it("formats appended metadata", () => {
     const text = buildToolText("answer", {
       sources: [{ title: "Doc", url: "https://example.com" }],
       searches: ["query"],
-      fileWriteError: "disk full",
     });
 
     assert.match(text, /<web_research>/);
     assert.match(text, /\*\*Sources:\*\*/);
     assert.match(text, /Search queries performed/);
-    assert.match(text, /disk full/);
   });
 
   it("wraps the answer in an untrusted-content envelope and neutralizes tags", () => {
@@ -875,54 +861,6 @@ describe("createAskGoogleHandler", () => {
     const result = await handler({ question: "retry empty" });
     assert.match(result.content[0].text, /got it/);
     assert.strictEqual(createdModels.length, 2);
-  });
-
-  it("writes output only when explicitly enabled and confined to the base directory", async () => {
-    const outputDir = mkdtempSync(join(tmpdir(), "ask-google-output-"));
-    const outputPath = join(outputDir, "nested", "answer.md");
-    const { handler } = createHandler({
-      fileOutputEnabled: true,
-      fileOutputBaseDir: outputDir,
-    });
-
-    try {
-      await handler({ question: "save this", output_file: outputPath });
-      assert.ok(existsSync(outputPath));
-      assert.match(readFileSync(outputPath, "utf-8"), /save this/);
-    } finally {
-      rmSync(outputDir, { recursive: true, force: true });
-    }
-  });
-
-  it("rejects output paths outside the configured base directory", async () => {
-    const outputDir = mkdtempSync(join(tmpdir(), "ask-google-output-"));
-    const { handler } = createHandler({
-      fileOutputEnabled: true,
-      fileOutputBaseDir: outputDir,
-    });
-
-    try {
-      // resolveOutputPath throws an InvalidParams McpError before any Gemini call — this
-      // propagates as a protocol error (not an isError result).
-      await assert.rejects(
-        handler({ question: "nope", output_file: "/tmp/outside.md" }),
-        /output_file must stay within/
-      );
-    } finally {
-      rmSync(outputDir, { recursive: true, force: true });
-    }
-  });
-
-  it("rejects output_file when file output is disabled", async () => {
-    const { handler } = createHandler({
-      fileOutputEnabled: false,
-      fileOutputBaseDir: process.cwd(),
-    });
-
-    await assert.rejects(
-      handler({ question: "save this", output_file: "answer.md" }),
-      /output_file is disabled/
-    );
   });
 
   it("does NOT abort a long-but-actively-streaming response", async () => {

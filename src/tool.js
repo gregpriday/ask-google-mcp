@@ -44,16 +44,6 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
         minLength: 1,
         maxLength: MAX_QUESTION_LENGTH,
       },
-      output_file: {
-        type: "string",
-        description:
-          "Optional path to write the response (also returned inline). Requires ASK_GOOGLE_ALLOW_FILE_OUTPUT=true. Relative paths resolve under ASK_GOOGLE_OUTPUT_DIR or the current working directory.",
-        examples: [
-          "./docs/research.md",
-          "output/gemini-response.txt",
-          "/safe/base/dir/research.md",
-        ],
-      },
       model: {
         type: "string",
         description: ROUTER_AVAILABLE
@@ -132,7 +122,6 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
           },
         },
       },
-      file_write_error: { type: "string" },
     },
     required: ["answer"],
   },
@@ -149,7 +138,6 @@ export function validateAskGoogleArguments(rawArgs = {}) {
   }
 
   const question = hasQuestion ? rawArgs.question : rawArgs?.query;
-  const outputFile = rawArgs?.output_file;
   const model = rawArgs?.model ?? DEFAULT_MODEL;
 
   if (!hasQuestion && !hasQuery) {
@@ -170,16 +158,6 @@ export function validateAskGoogleArguments(rawArgs = {}) {
     );
   }
 
-  if (outputFile !== undefined && outputFile !== null) {
-    if (typeof outputFile !== "string") {
-      throw createInvalidParamsError("output_file must be a string");
-    }
-
-    if (outputFile.trim().length === 0) {
-      throw createInvalidParamsError("output_file cannot be empty");
-    }
-  }
-
   if (!MODEL_PARAM_VALUES.includes(model)) {
     throw createInvalidParamsError(
       `model must be one of: ${MODEL_PARAM_VALUES.join(", ")}. Got: ${model}`
@@ -188,7 +166,6 @@ export function validateAskGoogleArguments(rawArgs = {}) {
 
   return {
     question,
-    outputFile,
     model,
   };
 }
@@ -323,7 +300,7 @@ export function applyInlineCitations(text, supports, sources) {
 
 export function buildToolText(
   text,
-  { sources = [], searches = [], supports = [], groundingStatus = "grounded", fileWriteError, diagnostics } = {}
+  { sources = [], searches = [], supports = [], groundingStatus = "grounded", diagnostics } = {}
 ) {
   // Splice grounding-supports citations BEFORE wrapping/sanitizing so the offsets line up with
   // the model's original text. The wrapper adds a known prefix; sanitize doesn't change indices.
@@ -346,10 +323,6 @@ export function buildToolText(
     });
   }
 
-  if (fileWriteError) {
-    fullResponse += `\n\n---\n**Note:** ${fileWriteError}`;
-  }
-
   if (diagnostics) {
     fullResponse += `\n\n---\n${formatDiagnostics(diagnostics)}`;
   }
@@ -359,9 +332,9 @@ export function buildToolText(
 
 export function buildStructuredContent(
   text,
-  { sources = [], searches = [], supports = [], groundingStatus = "grounded", fileWriteError, diagnostics } = {}
+  { sources = [], searches = [], supports = [], groundingStatus = "grounded", diagnostics } = {}
 ) {
-  const result = {
+  return {
     answer: text,
     answer_with_citations: applyInlineCitations(text, supports, sources),
     grounding_status: groundingStatus,
@@ -402,10 +375,6 @@ export function buildStructuredContent(
         }
       : undefined,
   };
-  if (fileWriteError) {
-    result.file_write_error = fileWriteError;
-  }
-  return result;
 }
 
 export function formatDiagnostics({

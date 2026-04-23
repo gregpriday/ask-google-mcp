@@ -2,7 +2,7 @@
 
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
-import { dirname, join, resolve } from "path";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -45,36 +45,6 @@ const OPTIONAL_ENV_VARS = [
         return "Must be a positive integer";
       }
       return null;
-    },
-  },
-  {
-    name: "ASK_GOOGLE_ALLOW_FILE_OUTPUT",
-    description: "Enable output_file writes when set to true",
-    default: "false",
-    validator: (value) => {
-      if (value === undefined) {
-        return null;
-      }
-      if (!["true", "false"].includes(value)) {
-        return "Must be either 'true' or 'false'";
-      }
-      return null;
-    },
-  },
-  {
-    name: "ASK_GOOGLE_OUTPUT_DIR",
-    description: "Base directory used for output_file writes",
-    default: process.cwd(),
-    validator: (value) => {
-      if (!value) {
-        return null;
-      }
-      try {
-        resolve(value);
-        return null;
-      } catch (error) {
-        return `Invalid path: ${error.message}`;
-      }
     },
   },
   {

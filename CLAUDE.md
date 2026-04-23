@@ -119,8 +119,8 @@ The server implements a **single-tool MCP server** following the stdio transport
 **Unit tests** (test/unit/tool-handler.test.js):
 - Mock `MockGenerativeModel` class simulates Gemini API responses
 - Extracted `handleAskGoogle()` function mirrors production logic for testability
-- Test categories: input validation, successful responses, error handling, edge cases, retry logic, output_file parameter, model parameter
-- 64 total test cases covering all validation rules, error scenarios, retry behavior, and file output
+- Test categories: input validation, successful responses, error handling, edge cases, retry logic, model parameter, auto-routing
+- Full coverage of validation rules, error scenarios, retry behavior, and router behavior
 
 **Integration test** (test/test-gemini-mcp.js):
 - Tests live Gemini API with real `GOOGLE_API_KEY` from `.env`
@@ -144,15 +144,6 @@ Error detection uses **case-insensitive string matching** on `error.message.toLo
 - AUTH_ERROR and QUOTA_ERROR are **not retried** (permanent failures)
 - All other errors are retried
 - Retry logging shows correct attempt count: "Attempt X/(N+1)"
-
-### Output File Behavior
-
-The `output_file` parameter (src/index.js:154-162, 287-299):
-- Accepts both absolute and relative paths
-- Relative paths resolve from the **current working directory** (`process.cwd()`), not "project root"
-- Parent directories are created automatically if needed (`mkdirSync` with `recursive: true`)
-- File write errors are non-fatal: response is still returned with error message appended
-- Successfully written files are logged to stderr: `[FILE_OUTPUT] Successfully wrote response to: {path}`
 
 ### Response Format Contract
 

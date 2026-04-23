@@ -35,8 +35,6 @@ function printHelp() {
   console.log("  ASK_GOOGLE_THINKING_LEVEL_PRO   Gemini 3 thinking level for pro: LOW|MEDIUM|HIGH (default: MEDIUM)");
   console.log("  ASK_GOOGLE_THINKING_LEVEL_FLASH Gemini 3 thinking level for flash: MINIMAL|LOW|MEDIUM|HIGH (default: SDK default)");
   console.log("  ASK_GOOGLE_THINKING_LEVEL_FLASH_LITE Same for flash-lite (default: SDK default)");
-  console.log("  ASK_GOOGLE_ALLOW_FILE_OUTPUT    Set to true to enable output_file writes");
-  console.log("  ASK_GOOGLE_OUTPUT_DIR           Base directory allowed for output_file writes");
   console.log("  ASK_GOOGLE_ENABLED_MODELS       Comma-separated aliases to expose: pro, flash, flash-lite (default: all)");
   console.log("  ASK_GOOGLE_ROUTER_ENABLED       Enable auto-routing (default: true). When false, model defaults to pro.");
   console.log("  ASK_GOOGLE_ROUTER_MODEL         Model alias used for routing decisions (default: flash-lite)");

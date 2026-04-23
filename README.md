@@ -103,8 +103,6 @@ Optional variables:
 
 ```bash
 ASK_GOOGLE_TIMEOUT_MS=300000
-ASK_GOOGLE_ALLOW_FILE_OUTPUT=false
-ASK_GOOGLE_OUTPUT_DIR=.
 ASK_GOOGLE_MAX_RETRIES=3
 ASK_GOOGLE_INITIAL_RETRY_DELAY_MS=1000
 
@@ -138,7 +136,6 @@ ASK_GOOGLE_INITIAL_RETRY_DELAY_MS=1000
 
 - `question` - required string, 1 to 4,000 characters (also accepted as `query` alias; do not set both)
 - `model` - optional: `auto` (default), `pro`, `flash`, or `flash-lite`
-- `output_file` - optional file path for saving the final response
 
 ### Model aliases
 
@@ -161,16 +158,6 @@ The router has a tight timeout (5s by default) and strict JSON enum output. If i
 You can still pin a specific model (`pro`, `flash`, `flash-lite`) to bypass the router. To disable auto-routing entirely and restore the old default-model behavior, set `ASK_GOOGLE_ROUTER_ENABLED=false`.
 
 The routing decision is surfaced in the response's `diagnostics.router` block and in the diagnostics footer text (e.g., `model=auto→pro · router=0.4s`).
-
-### `output_file` safety rules
-
-`output_file` is intentionally locked down.
-
-- It is disabled by default.
-- It only works when `ASK_GOOGLE_ALLOW_FILE_OUTPUT=true`.
-- Writes are restricted to `ASK_GOOGLE_OUTPUT_DIR`.
-- Relative paths resolve under that base directory.
-- Absolute paths are only allowed if they still resolve inside that base directory.
 
 ## Example Tool Calls
 
@@ -204,20 +191,6 @@ The routing decision is surfaced in the response's `diagnostics.router` block an
   "name": "ask_google",
   "arguments": {
     "question": "React 19 vs React 18: current migration risks, breaking changes, and official upgrade guidance"
-  }
-}
-```
-
-### Save output to a file
-
-This only works if file output is enabled in the server environment.
-
-```json
-{
-  "name": "ask_google",
-  "arguments": {
-    "question": "Summarize the latest ECMAScript standard and notable additions",
-    "output_file": "research/ecmascript.md"
   }
 }
 ```
@@ -264,7 +237,7 @@ That script checks:
 - whether a local `.env` or `~/.env` exists
 - whether `GOOGLE_API_KEY` looks present and non-placeholder
 - Node.js version compatibility
-- optional runtime settings like timeout and file-output flags
+- optional runtime settings like timeout flags
 
 ## Claude Desktop
 
@@ -310,12 +283,15 @@ src/
   ask-google.js
   config.js
   errors.js
-  file-output.js
   index.js
   prompt.js
   retry.js
+  router.js
+  router-prompt.txt
+  sanitize.js
   server.js
   system-prompt.txt
+  tool.js
 scripts/
   check-env.js
 test/
@@ -348,7 +324,6 @@ Tool failures are surfaced as MCP errors with categorized messages:
 - `[QUOTA_ERROR]` - quota or rate limit exceeded
 - `[TIMEOUT_ERROR]` - request timed out
 - `[API_ERROR]` - other Gemini/API failures
-- `[CONFIG_ERROR]` - disabled or unsafe file-output configuration
 
 ## License
 

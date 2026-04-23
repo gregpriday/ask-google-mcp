@@ -1,7 +1,7 @@
 import { config as dotenvConfig } from "dotenv";
 import { readFileSync } from "fs";
 import { homedir } from "os";
-import { dirname, join, resolve } from "path";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -235,11 +235,6 @@ export const FALLBACK_MODEL = (() => {
   }
   return raw;
 })();
-export const FILE_OUTPUT_ENABLED = process.env.ASK_GOOGLE_ALLOW_FILE_OUTPUT === "true";
-export const FILE_OUTPUT_BASE_DIR = resolve(
-  process.env.ASK_GOOGLE_OUTPUT_DIR || process.cwd()
-);
-
 // Gemini 3 `thinkingConfig.thinkingLevel`. Uppercase strings: MINIMAL (flash/flash-lite only),
 // LOW, MEDIUM, HIGH. Anything else is ignored with a warning so a bad env doesn't take the
 // server down and we fall back to the per-model default below.
