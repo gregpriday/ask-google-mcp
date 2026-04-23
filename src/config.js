@@ -103,7 +103,7 @@ export const DEFAULT_MODEL = (() => {
   );
   return fallback;
 })();
-export const MAX_QUESTION_LENGTH = 10_000;
+export const MAX_QUESTION_LENGTH = 4_000;
 export const MAX_RETRIES = parsePositiveInteger(process.env.ASK_GOOGLE_MAX_RETRIES, 2);
 export const INITIAL_RETRY_DELAY_MS = parsePositiveInteger(
   process.env.ASK_GOOGLE_INITIAL_RETRY_DELAY_MS,
@@ -171,3 +171,37 @@ export const FILE_OUTPUT_ENABLED = process.env.ASK_GOOGLE_ALLOW_FILE_OUTPUT === 
 export const FILE_OUTPUT_BASE_DIR = resolve(
   process.env.ASK_GOOGLE_OUTPUT_DIR || process.cwd()
 );
+
+// Gemini 3 `thinkingConfig.thinkingLevel`. Uppercase strings: MINIMAL (flash/flash-lite only),
+// LOW, MEDIUM, HIGH. If unset, the SDK default applies (HIGH for pro). Anything else is ignored
+// with a warning so a bad env doesn't take the server down.
+const VALID_THINKING_LEVELS = new Set(["MINIMAL", "LOW", "MEDIUM", "HIGH"]);
+
+function parseThinkingLevel(rawValue, modelAlias) {
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return undefined;
+  }
+  const normalized = rawValue.trim().toUpperCase();
+  if (!VALID_THINKING_LEVELS.has(normalized)) {
+    console.error(
+      `[CONFIG] Ignoring invalid thinking level "${rawValue}" for ${modelAlias} (valid: ${[...VALID_THINKING_LEVELS].join(", ")})`
+    );
+    return undefined;
+  }
+  if (normalized === "MINIMAL" && modelAlias === "pro") {
+    console.error(
+      `[CONFIG] thinkingLevel=MINIMAL is not supported on pro; ignoring for pro`
+    );
+    return undefined;
+  }
+  return normalized;
+}
+
+export const MODEL_THINKING_LEVELS = Object.freeze({
+  pro: parseThinkingLevel(process.env.ASK_GOOGLE_THINKING_LEVEL_PRO, "pro"),
+  flash: parseThinkingLevel(process.env.ASK_GOOGLE_THINKING_LEVEL_FLASH, "flash"),
+  "flash-lite": parseThinkingLevel(
+    process.env.ASK_GOOGLE_THINKING_LEVEL_FLASH_LITE,
+    "flash-lite"
+  ),
+});

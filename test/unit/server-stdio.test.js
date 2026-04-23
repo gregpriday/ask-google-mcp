@@ -62,7 +62,7 @@ describe("stdio server without GOOGLE_API_KEY", () => {
     assert.ok(listResponse.result.tools.find((tool) => tool.name === "ask_google"));
   });
 
-  it("returns an auth error only when the tool is called", async () => {
+  it("returns an auth error result (isError: true) only when the tool is called", async () => {
     const callResponse = await sendRequest(server, {
       jsonrpc: "2.0",
       id: 3,
@@ -75,8 +75,13 @@ describe("stdio server without GOOGLE_API_KEY", () => {
       },
     });
 
-    assert.ok(callResponse.error);
-    assert.match(callResponse.error.message, /\[AUTH_ERROR\]/);
+    // Classified tool-level failures are returned as results with isError:true, not JSON-RPC
+    // protocol errors — that way the caller agent can read the error text and self-correct
+    // without the connection being severed.
+    assert.ok(callResponse.result, "expected a tool result, not a protocol error");
+    assert.strictEqual(callResponse.result.isError, true);
+    const text = callResponse.result.content?.[0]?.text ?? "";
+    assert.match(text, /\[AUTH_ERROR\]/);
   });
 });
 

@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import {
   DEFAULT_MODEL,
   FALLBACK_MODEL,
@@ -7,6 +7,7 @@ import {
   INITIAL_RETRY_DELAY_MS,
   MAX_RETRIES,
   MODEL_INACTIVITY_TIMEOUTS_MS,
+  MODEL_THINKING_LEVELS,
   MODEL_TIMEOUTS_MS,
   MODEL_TTFT_TIMEOUTS_MS,
   OVERALL_BUDGET_MS,
@@ -14,7 +15,6 @@ import {
 } from "./config.js";
 import {
   classifyGeminiError,
-  createInternalError,
   isPermanentFinishReason,
   isRetryableGeminiError,
 } from "./errors.js";
@@ -22,6 +22,7 @@ import { resolveOutputPath, writeResponseToFile } from "./file-output.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { retryWithBackoff } from "./retry.js";
 import {
+  buildStructuredContent,
   buildToolText,
   extractGroundingData,
   resolveModelId,
@@ -42,17 +43,33 @@ function selectAttemptModel({ requestedModel, attempt, totalAttempts, fallbackMo
   return { model: requestedModel, fellBack: false };
 }
 
+function readChunkText(chunk) {
+  if (!chunk) return "";
+  // GenerateContentResponse.text is a getter that concatenates text parts of the first candidate.
+  // Guard against it being undefined on non-text chunks (e.g., pure tool-call signalling).
+  const value = chunk.text;
+  return typeof value === "string" ? value : "";
+}
+
+function readChunkGrounding(chunk) {
+  return chunk?.candidates?.[0]?.groundingMetadata ?? null;
+}
+
+function readChunkFinishReason(chunk) {
+  return chunk?.candidates?.[0]?.finishReason ?? null;
+}
+
 // Stream the response under three independent signals:
 //   1. TTFT timer — fires if no first chunk arrives within ttftMs. Cleared on first chunk.
 //   2. Inactivity timer — after first chunk, resets every time a new chunk arrives. Fires if
 //      the stream goes silent for longer than inactivityMs (a real stall, not a slow response).
 //   3. Hard ceiling — absolute upper bound on the attempt. Only triggers on pathological
 //      drip-feeding; the inactivity timer should catch real hangs long before.
-// All three share a single AbortController. Node's undici fetch cleanly severs the TCP
-// connection on abort, so the `for await` loop rejects immediately with an AbortError.
+// All three share a single AbortController. Aborting the config.abortSignal closes the TCP
+// connection on the SDK's side, so the `for await` loop rejects immediately with an AbortError.
 async function streamWithTimeouts(
-  generativeModel,
-  question,
+  modelsClient,
+  { model, contents, systemInstruction, tools, thinkingConfig },
   { ttftMs, inactivityMs, hardCeilingMs, logger, attemptLabel, onProgress }
 ) {
   const controller = new AbortController();
@@ -90,25 +107,28 @@ async function streamWithTimeouts(
   }, hardCeilingMs);
 
   try {
-    const result = await generativeModel.generateContentStream(question, {
-      signal: controller.signal,
-    });
-
-    // Safety net: the SDK's `result.response` promise is separate from the stream iterator.
-    // If we abort mid-stream and throw before reaching `await result.response`, that promise
-    // will reject with AbortError and — with no handler attached — becomes an unhandled
-    // rejection, which our process-level handler turns into process.exit(1). Attach a no-op
-    // catch now so the rejection is considered handled; any real error still surfaces via the
-    // `await result.response` call on the happy path.
-    if (result?.response && typeof result.response.catch === "function") {
-      result.response.catch(() => {});
+    const config = {
+      systemInstruction,
+      tools,
+      abortSignal: controller.signal,
+    };
+    if (thinkingConfig) {
+      config.thinkingConfig = thinkingConfig;
     }
+
+    const responseStream = await modelsClient.generateContentStream({
+      model,
+      contents,
+      config,
+    });
 
     const textParts = [];
     let charCount = 0;
     let chunkIndex = 0;
+    let latestGrounding = null;
+    let latestFinishReason = null;
 
-    for await (const chunk of result.stream) {
+    for await (const chunk of responseStream) {
       chunkIndex += 1;
 
       if (firstTokenAt === undefined) {
@@ -121,10 +141,20 @@ async function streamWithTimeouts(
 
       armInactivity();
 
-      const chunkText = typeof chunk.text === "function" ? chunk.text() : "";
+      const chunkText = readChunkText(chunk);
       if (chunkText) {
         textParts.push(chunkText);
         charCount += chunkText.length;
+      }
+
+      const grounding = readChunkGrounding(chunk);
+      if (grounding) {
+        latestGrounding = grounding;
+      }
+
+      const finishReason = readChunkFinishReason(chunk);
+      if (finishReason) {
+        latestFinishReason = finishReason;
       }
 
       if (onProgress) {
@@ -139,14 +169,10 @@ async function streamWithTimeouts(
     // Stream ended cleanly — no more chunks coming, so inactivity timer is no longer relevant.
     if (inactivityTimer) clearTimeout(inactivityTimer);
 
-    const finalResponse = await result.response;
-    const text =
-      textParts.join("") ||
-      (typeof finalResponse?.text === "function" ? finalResponse.text() : "");
-
     return {
-      text,
-      response: finalResponse,
+      text: textParts.join(""),
+      groundingMetadata: latestGrounding,
+      finishReason: latestFinishReason,
       firstTokenMs: firstTokenAt !== undefined ? firstTokenAt - attemptStart : null,
       durationMs: Date.now() - attemptStart,
       charCount,
@@ -174,6 +200,13 @@ async function streamWithTimeouts(
   }
 }
 
+function errorResult(text) {
+  return {
+    content: [{ type: "text", text }],
+    isError: true,
+  };
+}
+
 export function createAskGoogleHandler({
   logger = console,
   systemPromptTemplate,
@@ -182,6 +215,7 @@ export function createAskGoogleHandler({
   modelTimeoutsMs = MODEL_TIMEOUTS_MS,
   modelTtftTimeoutsMs = MODEL_TTFT_TIMEOUTS_MS,
   modelInactivityTimeoutsMs = MODEL_INACTIVITY_TIMEOUTS_MS,
+  modelThinkingLevels = MODEL_THINKING_LEVELS,
   fallbackModel = FALLBACK_MODEL,
   // requestTimeoutMs is retained for tests/overrides — when supplied, it acts as a global
   // ceiling on every model's per-attempt timeout.
@@ -192,7 +226,7 @@ export function createAskGoogleHandler({
   fileOutputEnabled = FILE_OUTPUT_ENABLED,
   fileOutputBaseDir = FILE_OUTPUT_BASE_DIR,
   getApiKey = () => process.env.GOOGLE_API_KEY,
-  createClient = (apiKey) => new GoogleGenerativeAI(apiKey),
+  createClient = (apiKey) => new GoogleGenAI({ apiKey }),
 } = {}) {
   let cachedApiKey;
   let cachedClient;
@@ -200,9 +234,12 @@ export function createAskGoogleHandler({
   function getClient() {
     const apiKey = getApiKey();
     if (!apiKey) {
-      throw createInternalError(
+      const err = new Error(
         "[AUTH_ERROR] GOOGLE_API_KEY environment variable is required to call ask_google"
       );
+      err.code = "AUTH_ERROR";
+      err.status = 401;
+      throw err;
     }
 
     if (!cachedClient || cachedApiKey !== apiKey) {
@@ -257,6 +294,7 @@ export function createAskGoogleHandler({
     try {
       const systemInstruction = buildSystemPrompt(systemPromptTemplate, now());
       const client = getClient();
+      const modelsClient = client.models;
 
       const totalAttempts = diagnostics.totalAttempts;
 
@@ -283,45 +321,53 @@ export function createAskGoogleHandler({
           );
           const attemptLabel = `ATTEMPT ${attempt}/${totalAttempts}`;
 
+          const thinkingLevel = modelThinkingLevels?.[attemptModel];
+          const thinkingConfig = thinkingLevel ? { thinkingLevel } : undefined;
+
           logger.error(
             `[${attemptLabel}] model=${attemptModel}${fellBack ? "(fallback)" : ""} ` +
               `ceiling_ms=${hardCeilingMs} ttft_ms=${ttftMs} inactivity_ms=${inactivityMs} ` +
-              `remaining_budget_ms=${remainingBudgetMs}`
+              `remaining_budget_ms=${remainingBudgetMs}` +
+              (thinkingLevel ? ` thinking=${thinkingLevel}` : "")
           );
 
           emitProgress(
             `Attempt ${attempt}/${totalAttempts} via ${attemptModel}${fellBack ? " (fallback)" : ""}...`
           );
 
-          const generativeModel = client.getGenerativeModel({
-            model: modelId,
-            systemInstruction,
-            tools: [{ googleSearch: {} }],
-          });
-
           let lastProgressEmitAt = 0;
-          const result = await streamWithTimeouts(generativeModel, question, {
-            ttftMs,
-            inactivityMs,
-            hardCeilingMs,
-            logger,
-            attemptLabel,
-            onProgress: notifyProgress
-              ? ({ charCount, elapsedMs }) => {
-                  // Time-based throttle: emit at most once per second. This is predictable
-                  // regardless of chunk size (a 500-char chunk counts the same as a 5-char chunk).
-                  const now = Date.now();
-                  if (charCount > 0 && now - lastProgressEmitAt >= 1_000) {
-                    lastProgressEmitAt = now;
-                    emitProgress(
-                      `Streaming response · ${charCount} chars · ${(elapsedMs / 1000).toFixed(1)}s`
-                    );
+          const result = await streamWithTimeouts(
+            modelsClient,
+            {
+              model: modelId,
+              contents: question,
+              systemInstruction,
+              tools: [{ googleSearch: {} }],
+              thinkingConfig,
+            },
+            {
+              ttftMs,
+              inactivityMs,
+              hardCeilingMs,
+              logger,
+              attemptLabel,
+              onProgress: notifyProgress
+                ? ({ charCount, elapsedMs }) => {
+                    // Time-based throttle: emit at most once per second. This is predictable
+                    // regardless of chunk size (a 500-char chunk counts the same as a 5-char chunk).
+                    const now = Date.now();
+                    if (charCount > 0 && now - lastProgressEmitAt >= 1_000) {
+                      lastProgressEmitAt = now;
+                      emitProgress(
+                        `Streaming response · ${charCount} chars · ${(elapsedMs / 1000).toFixed(1)}s`
+                      );
+                    }
                   }
-                }
-              : null,
-          });
+                : null,
+            }
+          );
 
-          const finishReason = result.response?.candidates?.[0]?.finishReason;
+          const finishReason = result.finishReason;
           if (isPermanentFinishReason(finishReason)) {
             const err = new Error(
               `Gemini returned non-recoverable finishReason=${finishReason}`
@@ -366,8 +412,7 @@ export function createAskGoogleHandler({
 
       diagnostics.durationMs = Date.now() - startedAt;
 
-      const response = streamResult.response;
-      const { sources, searches } = extractGroundingData(response);
+      const { sources, searches } = extractGroundingData(streamResult.groundingMetadata);
       let fileWriteError;
       let fullResponse = buildToolText(streamResult.text, { sources, searches, diagnostics });
 
@@ -387,6 +432,13 @@ export function createAskGoogleHandler({
         }
       }
 
+      const structuredContent = buildStructuredContent(streamResult.text, {
+        sources,
+        searches,
+        fileWriteError,
+        diagnostics,
+      });
+
       return {
         content: [
           {
@@ -394,13 +446,15 @@ export function createAskGoogleHandler({
             text: fullResponse,
           },
         ],
+        structuredContent,
       };
     } catch (error) {
-      if (error.name === "McpError") {
+      if (error?.name === "McpError") {
+        // Protocol-level errors (invalid params) propagate as protocol errors.
         throw error;
       }
 
-      throw createInternalError(classifyGeminiError(error));
+      return errorResult(classifyGeminiError(error));
     }
   };
 }

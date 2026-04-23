@@ -1,10 +1,18 @@
 import { DEFAULT_MODEL, ENABLED_MODELS, MAX_QUESTION_LENGTH, MODEL_ALIASES } from "./config.js";
 import { createInvalidParamsError } from "./errors.js";
+import { wrapUntrusted } from "./sanitize.js";
 
 export const ASK_GOOGLE_TOOL = Object.freeze({
   name: "ask_google",
   description:
-    "Ask an AI researcher a question, powered by Gemini with Google Search grounding. Accepts anything from short lookups to detailed, multi-paragraph research briefs with full context. The question is answered by an LLM with real-time web access, so you can include background details, constraints, and follow-up angles — the more context you provide, the better the answer. Prefer 'current/latest' over hardcoding years. Pass the prompt as `question` (preferred) or `query` (alias).",
+    "Ask an AI researcher with live Google Search grounding (Gemini). Use when you need current/latest facts that post-date your training: versions, releases, recent API or docs changes, breaking news, changelogs, on-demand web research. Do not use for stable language syntax, historical facts, or knowledge already in your training data. Accepts short lookups or multi-paragraph research briefs.",
+  annotations: {
+    title: "Ask Google (Gemini + Search Grounding)",
+    readOnlyHint: true,
+    idempotentHint: true,
+    openWorldHint: true,
+    destructiveHint: false,
+  },
   inputSchema: {
     type: "object",
     additionalProperties: false,
@@ -12,7 +20,7 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
       question: {
         type: "string",
         description:
-          "Your question for the AI researcher. Can range from a short lookup to a detailed, multi-paragraph research brief with full context, constraints, and specific angles to explore. This is processed by an LLM (Gemini) with real-time Google Search access, so natural language with rich detail works best. Prefer 'current/latest/as of today' over hardcoding dates unless a specific historical year matters. `query` is accepted as an alias.",
+          "Your question for the AI researcher. Short lookups or multi-paragraph research briefs both work. Prefer 'current/latest/as of today' over hardcoding dates unless a specific historical year matters. `query` is accepted as an alias.",
         minLength: 1,
         maxLength: MAX_QUESTION_LENGTH,
         examples: [
@@ -47,6 +55,45 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
         examples: ENABLED_MODELS,
       },
     },
+  },
+  outputSchema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      answer: { type: "string" },
+      sources: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            title: { type: "string" },
+            url: { type: "string" },
+            domain: { type: "string" },
+          },
+          required: ["title", "url"],
+        },
+      },
+      search_queries: {
+        type: "array",
+        items: { type: "string" },
+      },
+      diagnostics: {
+        type: "object",
+        additionalProperties: true,
+        properties: {
+          model: { type: "string" },
+          fell_back: { type: "boolean" },
+          attempts: { type: "integer" },
+          total_attempts: { type: "integer" },
+          duration_ms: { type: "integer" },
+          ttft_ms: { type: ["integer", "null"] },
+          search_queries_count: { type: "integer" },
+        },
+      },
+      file_write_error: { type: "string" },
+    },
+    required: ["answer"],
   },
 });
 
@@ -109,8 +156,17 @@ export function resolveModelId(model) {
   return MODEL_ALIASES[model];
 }
 
-export function extractGroundingData(response) {
-  const metadata = response?.candidates?.[0]?.groundingMetadata;
+export function extractGroundingData(responseLike) {
+  // Accept three shapes: a bare groundingMetadata object (new SDK streaming aggregate), a
+  // wrapper with `.groundingMetadata`, or a full response with `.candidates[0].groundingMetadata`.
+  const isBareMetadata =
+    responseLike &&
+    (responseLike.groundingChunks !== undefined ||
+      responseLike.webSearchQueries !== undefined ||
+      responseLike.searchEntryPoint !== undefined);
+  const metadata = isBareMetadata
+    ? responseLike
+    : responseLike?.groundingMetadata ?? responseLike?.candidates?.[0]?.groundingMetadata;
   const rawSources =
     metadata?.groundingChunks?.map((chunk) => ({
       title: chunk.web?.title || "Unknown",
@@ -138,7 +194,7 @@ export function buildToolText(
   text,
   { sources = [], searches = [], fileWriteError, diagnostics } = {}
 ) {
-  let fullResponse = text;
+  let fullResponse = wrapUntrusted(text);
 
   if (sources.length > 0) {
     fullResponse += "\n\n---\n**Sources:**\n";
@@ -163,6 +219,32 @@ export function buildToolText(
   }
 
   return fullResponse;
+}
+
+export function buildStructuredContent(
+  text,
+  { sources = [], searches = [], fileWriteError, diagnostics } = {}
+) {
+  const result = {
+    answer: text,
+    sources,
+    search_queries: [...searches],
+    diagnostics: diagnostics
+      ? {
+          model: diagnostics.model,
+          fell_back: Boolean(diagnostics.fellBack),
+          attempts: diagnostics.attempts,
+          total_attempts: diagnostics.totalAttempts,
+          duration_ms: diagnostics.durationMs,
+          ttft_ms: diagnostics.ttftMs ?? null,
+          search_queries_count: searches.length,
+        }
+      : undefined,
+  };
+  if (fileWriteError) {
+    result.file_write_error = fileWriteError;
+  }
+  return result;
 }
 
 export function formatDiagnostics({
