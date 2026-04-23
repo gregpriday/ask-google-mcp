@@ -4,9 +4,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
+  applyInlineCitations,
+  buildStructuredContent,
   buildToolText,
+  computeGroundingStatus,
   extractGroundingData,
   formatDiagnostics,
+  groundingWarning,
   resolveModelId,
   validateAskGoogleArguments,
 } from "../../src/tool.js";
@@ -300,6 +304,122 @@ describe("tool helpers", () => {
     assert.deepStrictEqual(searches, ["x"]);
   });
 
+  it("extracts groundingSupports and remaps duplicate-chunk indices to deduped source indices", () => {
+    // Two chunks share the same URL; both should map to display index 1. A second unique URL
+    // becomes display index 2. Supports referencing chunk 0 should still be valid even though
+    // chunk 0 was consolidated under display index 1.
+    const { sources, supports } = extractGroundingData({
+      groundingChunks: [
+        { web: { title: "A", uri: "https://a.example" } },
+        { web: { title: "A-dup", uri: "https://a.example" } },
+        { web: { title: "B", uri: "https://b.example" } },
+      ],
+      groundingSupports: [
+        {
+          segment: { startIndex: 0, endIndex: 10, text: "first claim" },
+          groundingChunkIndices: [0, 1], // both point to display index 1
+        },
+        {
+          segment: { startIndex: 11, endIndex: 25, text: "second claim" },
+          groundingChunkIndices: [2],
+        },
+      ],
+    });
+    assert.deepStrictEqual(sources.map((s) => s.url), [
+      "https://a.example",
+      "https://b.example",
+    ]);
+    // First support maps both raw chunks to display index 1, deduped.
+    assert.deepStrictEqual(supports[0].sourceIndices, [1]);
+    assert.deepStrictEqual(supports[1].sourceIndices, [2]);
+  });
+
+  it("applyInlineCitations splices [N](url) markers at endIndex boundaries", () => {
+    const text = "Claim one. Claim two.";
+    const sources = [
+      { title: "One", url: "https://one.example" },
+      { title: "Two", url: "https://two.example" },
+    ];
+    const supports = [
+      { startIndex: 0, endIndex: 10, text: "Claim one.", sourceIndices: [1] },
+      { startIndex: 11, endIndex: 21, text: "Claim two.", sourceIndices: [2] },
+    ];
+    const out = applyInlineCitations(text, supports, sources);
+    assert.strictEqual(
+      out,
+      "Claim one.[1](https://one.example) Claim two.[2](https://two.example)"
+    );
+  });
+
+  it("applyInlineCitations handles multiple sources per support", () => {
+    const text = "Claim.";
+    const sources = [
+      { title: "A", url: "https://a.example" },
+      { title: "B", url: "https://b.example" },
+    ];
+    const out = applyInlineCitations(
+      text,
+      [{ startIndex: 0, endIndex: 6, text: "Claim.", sourceIndices: [1, 2] }],
+      sources
+    );
+    assert.strictEqual(out, "Claim.[1](https://a.example)[2](https://b.example)");
+  });
+
+  it("applyInlineCitations is a no-op when supports or sources are empty", () => {
+    assert.strictEqual(applyInlineCitations("hi", [], [{ url: "x" }]), "hi");
+    assert.strictEqual(applyInlineCitations("hi", [{ endIndex: 2, sourceIndices: [1] }], []), "hi");
+  });
+
+  it("computeGroundingStatus distinguishes the failure modes", () => {
+    assert.strictEqual(computeGroundingStatus(null), "unavailable");
+    assert.strictEqual(computeGroundingStatus({}), "not_attempted");
+    assert.strictEqual(computeGroundingStatus({ webSearchQueries: ["q"] }), "no_sources");
+    assert.strictEqual(
+      computeGroundingStatus({
+        webSearchQueries: ["q"],
+        groundingChunks: [{ web: { uri: "https://x" } }],
+      }),
+      "sources_only"
+    );
+    assert.strictEqual(
+      computeGroundingStatus({
+        webSearchQueries: ["q"],
+        groundingChunks: [{ web: { uri: "https://x" } }],
+        groundingSupports: [{ segment: { endIndex: 5 }, groundingChunkIndices: [0] }],
+      }),
+      "grounded"
+    );
+  });
+
+  it("groundingWarning returns a warning string for non-grounded statuses", () => {
+    assert.match(groundingWarning("no_sources"), /ZERO GROUNDING SOURCES/);
+    assert.match(groundingWarning("not_attempted"), /NO SEARCH PERFORMED/);
+    assert.match(groundingWarning("unavailable"), /NO GROUNDING METADATA/);
+    assert.match(groundingWarning("sources_only"), /NO CLAIM-LEVEL GROUNDING/);
+    assert.strictEqual(groundingWarning("grounded"), null);
+  });
+
+  it("buildToolText prepends a warning when groundingStatus indicates a problem", () => {
+    const text = buildToolText("body", { groundingStatus: "no_sources" });
+    assert.match(text, /ZERO GROUNDING SOURCES/);
+    const ok = buildToolText("body", { groundingStatus: "grounded" });
+    assert.doesNotMatch(ok, /ZERO GROUNDING SOURCES/);
+  });
+
+  it("buildStructuredContent surfaces grounding_status and counts in diagnostics", () => {
+    const sc = buildStructuredContent("body", {
+      sources: [{ title: "S", url: "https://s" }],
+      searches: ["q1", "q2"],
+      supports: [],
+      groundingStatus: "sources_only",
+      diagnostics: { model: "pro", attempts: 1, totalAttempts: 3, durationMs: 1000, ttftMs: 500 },
+    });
+    assert.strictEqual(sc.grounding_status, "sources_only");
+    assert.strictEqual(sc.diagnostics.grounding_status, "sources_only");
+    assert.strictEqual(sc.diagnostics.sources_count, 1);
+    assert.strictEqual(sc.diagnostics.supports_count, 0);
+  });
+
   it("formats appended metadata and notes", () => {
     const text = buildToolText("answer", {
       sources: [{ title: "Doc", url: "https://example.com" }],
@@ -511,10 +631,19 @@ describe("createAskGoogleHandler", () => {
     assert.deepStrictEqual(createdModels[0].config.thinkingConfig, { thinkingLevel: "LOW" });
   });
 
-  it("omits thinkingConfig when no level is set", async () => {
-    const { handler, createdModels } = createHandler();
-    await handler({ question: "default thinking", model: "pro" });
+  it("omits thinkingConfig when no level is set for that model", async () => {
+    const { handler, createdModels } = createHandler({
+      modelThinkingLevels: { pro: undefined, flash: undefined, "flash-lite": undefined },
+    });
+    await handler({ question: "sdk default thinking", model: "pro" });
     assert.strictEqual(createdModels[0].config.thinkingConfig, undefined);
+  });
+
+  it("defaults pro to thinkingLevel=MEDIUM at the config layer (not SDK default HIGH)", async () => {
+    const { MODEL_THINKING_LEVELS } = await import("../../src/config.js");
+    assert.strictEqual(MODEL_THINKING_LEVELS.pro, "MEDIUM");
+    assert.strictEqual(MODEL_THINKING_LEVELS.flash, undefined);
+    assert.strictEqual(MODEL_THINKING_LEVELS["flash-lite"], undefined);
   });
 
   it("returns structuredContent alongside the markdown text", async () => {
@@ -536,6 +665,70 @@ describe("createAskGoogleHandler", () => {
     assert.strictEqual(result.structuredContent.sources[0].url, "https://x.example");
     assert.strictEqual(result.structuredContent.diagnostics.model, "pro");
     assert.strictEqual(result.structuredContent.diagnostics.search_queries_count, 1);
+  });
+
+  it("warns loudly when grounding returned no sources (cricket-style hallucination case)", async () => {
+    const { handler } = createHandler({
+      plan: {
+        defaultStep: {
+          chunks: ["Confident-sounding fabricated answer."],
+          candidates: [
+            {
+              finishReason: "STOP",
+              groundingMetadata: {
+                webSearchQueries: ["q1", "q2"],
+                // No groundingChunks, no groundingSupports — the bug Greg caught.
+              },
+            },
+          ],
+        },
+      },
+    });
+    const result = await handler({ question: "obscure" });
+    assert.match(result.content[0].text, /ZERO GROUNDING SOURCES/);
+    assert.strictEqual(result.structuredContent.grounding_status, "no_sources");
+    assert.match(result.content[0].text, /grounding=no_sources/);
+  });
+
+  it("threads groundingSupports through to inline citations and structured content", async () => {
+    const { handler } = createHandler({
+      plan: {
+        defaultStep: {
+          chunks: ["Claim one. Claim two."],
+          candidates: [
+            {
+              finishReason: "STOP",
+              groundingMetadata: {
+                groundingChunks: [
+                  { web: { title: "One", uri: "https://one.example" } },
+                  { web: { title: "Two", uri: "https://two.example" } },
+                ],
+                groundingSupports: [
+                  {
+                    segment: { startIndex: 0, endIndex: 10, text: "Claim one." },
+                    groundingChunkIndices: [0],
+                  },
+                  {
+                    segment: { startIndex: 11, endIndex: 21, text: "Claim two." },
+                    groundingChunkIndices: [1],
+                  },
+                ],
+                webSearchQueries: ["q"],
+              },
+            },
+          ],
+        },
+      },
+    });
+    const result = await handler({ question: "cite me" });
+    // Markdown content has inline citation markers.
+    assert.match(result.content[0].text, /\[1\]\(https:\/\/one\.example\)/);
+    assert.match(result.content[0].text, /\[2\]\(https:\/\/two\.example\)/);
+    // Structured content carries both the raw answer and the cited version.
+    assert.strictEqual(result.structuredContent.answer, "Claim one. Claim two.");
+    assert.match(result.structuredContent.answer_with_citations, /\[1\]\(https:\/\/one\.example\)/);
+    assert.strictEqual(result.structuredContent.supports.length, 2);
+    assert.deepStrictEqual(result.structuredContent.supports[0].source_indices, [1]);
   });
 
   it("accepts the 'query' alias end-to-end", async () => {

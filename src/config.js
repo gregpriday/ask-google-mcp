@@ -173,35 +173,56 @@ export const FILE_OUTPUT_BASE_DIR = resolve(
 );
 
 // Gemini 3 `thinkingConfig.thinkingLevel`. Uppercase strings: MINIMAL (flash/flash-lite only),
-// LOW, MEDIUM, HIGH. If unset, the SDK default applies (HIGH for pro). Anything else is ignored
-// with a warning so a bad env doesn't take the server down.
+// LOW, MEDIUM, HIGH. Anything else is ignored with a warning so a bad env doesn't take the
+// server down and we fall back to the per-model default below.
 const VALID_THINKING_LEVELS = new Set(["MINIMAL", "LOW", "MEDIUM", "HIGH"]);
 
-function parseThinkingLevel(rawValue, modelAlias) {
+// Per-model default thinking level when no env var is set.
+// Pro defaults to MEDIUM (not the SDK default of HIGH) because HIGH spends the reasoning
+// budget heavily and makes the model more likely to answer from its own priors instead of
+// actually using search grounding. MEDIUM keeps Pro's depth advantage without making it
+// over-confident about training-data knowledge. Flash/flash-lite stay at the SDK default
+// (undefined → SDK picks a light thinking level) since they already lean tool-heavy.
+const DEFAULT_THINKING_LEVELS = Object.freeze({
+  pro: "MEDIUM",
+  flash: undefined,
+  "flash-lite": undefined,
+});
+
+function parseThinkingLevel(rawValue, modelAlias, defaultLevel) {
   if (rawValue === undefined || rawValue === null || rawValue === "") {
-    return undefined;
+    return defaultLevel;
   }
   const normalized = rawValue.trim().toUpperCase();
   if (!VALID_THINKING_LEVELS.has(normalized)) {
     console.error(
-      `[CONFIG] Ignoring invalid thinking level "${rawValue}" for ${modelAlias} (valid: ${[...VALID_THINKING_LEVELS].join(", ")})`
+      `[CONFIG] Ignoring invalid thinking level "${rawValue}" for ${modelAlias} (valid: ${[...VALID_THINKING_LEVELS].join(", ")}); using default ${defaultLevel ?? "SDK default"}`
     );
-    return undefined;
+    return defaultLevel;
   }
   if (normalized === "MINIMAL" && modelAlias === "pro") {
     console.error(
-      `[CONFIG] thinkingLevel=MINIMAL is not supported on pro; ignoring for pro`
+      `[CONFIG] thinkingLevel=MINIMAL is not supported on pro; using default ${defaultLevel ?? "SDK default"}`
     );
-    return undefined;
+    return defaultLevel;
   }
   return normalized;
 }
 
 export const MODEL_THINKING_LEVELS = Object.freeze({
-  pro: parseThinkingLevel(process.env.ASK_GOOGLE_THINKING_LEVEL_PRO, "pro"),
-  flash: parseThinkingLevel(process.env.ASK_GOOGLE_THINKING_LEVEL_FLASH, "flash"),
+  pro: parseThinkingLevel(
+    process.env.ASK_GOOGLE_THINKING_LEVEL_PRO,
+    "pro",
+    DEFAULT_THINKING_LEVELS.pro
+  ),
+  flash: parseThinkingLevel(
+    process.env.ASK_GOOGLE_THINKING_LEVEL_FLASH,
+    "flash",
+    DEFAULT_THINKING_LEVELS.flash
+  ),
   "flash-lite": parseThinkingLevel(
     process.env.ASK_GOOGLE_THINKING_LEVEL_FLASH_LITE,
-    "flash-lite"
+    "flash-lite",
+    DEFAULT_THINKING_LEVELS["flash-lite"]
   ),
 });

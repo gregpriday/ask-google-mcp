@@ -412,9 +412,27 @@ export function createAskGoogleHandler({
 
       diagnostics.durationMs = Date.now() - startedAt;
 
-      const { sources, searches } = extractGroundingData(streamResult.groundingMetadata);
+      const { sources, searches, supports, groundingStatus } = extractGroundingData(
+        streamResult.groundingMetadata
+      );
+      diagnostics.groundingStatus = groundingStatus;
+
+      // Loud stderr log when grounding effectively failed — operators need this signal.
+      if (groundingStatus !== "grounded" && groundingStatus !== "sources_only") {
+        logger.error(
+          `[GROUNDING] status=${groundingStatus} queries=${searches.length} sources=${sources.length} ` +
+            `supports=${supports.length} — answer below is from training data, not retrieved evidence`
+        );
+      }
+
       let fileWriteError;
-      let fullResponse = buildToolText(streamResult.text, { sources, searches, diagnostics });
+      let fullResponse = buildToolText(streamResult.text, {
+        sources,
+        searches,
+        supports,
+        groundingStatus,
+        diagnostics,
+      });
 
       if (outputPath) {
         try {
@@ -426,6 +444,8 @@ export function createAskGoogleHandler({
           fullResponse = buildToolText(streamResult.text, {
             sources,
             searches,
+            supports,
+            groundingStatus,
             fileWriteError,
             diagnostics,
           });
@@ -435,6 +455,8 @@ export function createAskGoogleHandler({
       const structuredContent = buildStructuredContent(streamResult.text, {
         sources,
         searches,
+        supports,
+        groundingStatus,
         fileWriteError,
         diagnostics,
       });

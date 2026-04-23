@@ -32,7 +32,7 @@ function printHelp() {
   console.log("  ASK_GOOGLE_INACTIVITY_FLASH_LITE_MS Inter-chunk silence before abort for flash-lite (default: 10000)");
   console.log("  ASK_GOOGLE_MAX_RETRIES          Retries after the initial attempt (default: 2)");
   console.log("  ASK_GOOGLE_FALLBACK_MODEL       Model used for last attempt when pro keeps failing (default: flash)");
-  console.log("  ASK_GOOGLE_THINKING_LEVEL_PRO   Gemini 3 thinking level for pro: LOW|MEDIUM|HIGH (default: SDK default)");
+  console.log("  ASK_GOOGLE_THINKING_LEVEL_PRO   Gemini 3 thinking level for pro: LOW|MEDIUM|HIGH (default: MEDIUM)");
   console.log("  ASK_GOOGLE_THINKING_LEVEL_FLASH Gemini 3 thinking level for flash: MINIMAL|LOW|MEDIUM|HIGH (default: SDK default)");
   console.log("  ASK_GOOGLE_THINKING_LEVEL_FLASH_LITE Same for flash-lite (default: SDK default)");
   console.log("  ASK_GOOGLE_ALLOW_FILE_OUTPUT    Set to true to enable output_file writes");

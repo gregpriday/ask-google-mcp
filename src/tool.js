@@ -61,6 +61,13 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
     additionalProperties: false,
     properties: {
       answer: { type: "string" },
+      answer_with_citations: { type: "string" },
+      grounding_status: {
+        type: "string",
+        enum: ["grounded", "sources_only", "no_sources", "not_attempted", "unavailable"],
+        description:
+          "How thoroughly the answer is grounded. 'grounded' = sources + per-claim supports. 'sources_only' = pages retrieved but no per-claim mapping. 'no_sources' = search ran but returned nothing — answer is from training data, treat with high skepticism. 'not_attempted' / 'unavailable' = even worse.",
+      },
       sources: {
         type: "array",
         items: {
@@ -77,6 +84,20 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
       search_queries: {
         type: "array",
         items: { type: "string" },
+      },
+      supports: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            start_index: { type: "integer" },
+            end_index: { type: "integer" },
+            text: { type: "string" },
+            source_indices: { type: "array", items: { type: "integer" } },
+          },
+          required: ["end_index", "source_indices"],
+        },
       },
       diagnostics: {
         type: "object",
@@ -167,34 +188,129 @@ export function extractGroundingData(responseLike) {
   const metadata = isBareMetadata
     ? responseLike
     : responseLike?.groundingMetadata ?? responseLike?.candidates?.[0]?.groundingMetadata;
-  const rawSources =
-    metadata?.groundingChunks?.map((chunk) => ({
-      title: chunk.web?.title || "Unknown",
-      url: chunk.web?.uri || "",
-      domain: chunk.web?.domain || "",
-    })) || [];
+  const rawChunks = metadata?.groundingChunks || [];
+  const rawSources = rawChunks.map((chunk) => ({
+    title: chunk.web?.title || "Unknown",
+    url: chunk.web?.uri || "",
+    domain: chunk.web?.domain || "",
+  }));
 
-  const seenUrls = new Set();
-  const sources = rawSources
-    .filter((source) => {
-      if (!source.url || seenUrls.has(source.url)) {
-        return false;
+  // Build deduped sources (capped) and a parallel map from raw chunk index → 1-based display
+  // index. groundingSupports references chunks by their original index, so we need this map to
+  // splice citation markers that line up with the displayed Sources list.
+  const seenUrls = new Map(); // url -> displayIndex (1-based)
+  const sources = [];
+  const rawIndexToDisplayIndex = new Map();
+  for (let i = 0; i < rawSources.length; i += 1) {
+    const source = rawSources[i];
+    if (!source.url) continue;
+    if (seenUrls.has(source.url)) {
+      rawIndexToDisplayIndex.set(i, seenUrls.get(source.url));
+      continue;
+    }
+    if (sources.length >= 12) continue;
+    sources.push(source);
+    const displayIndex = sources.length; // 1-based
+    seenUrls.set(source.url, displayIndex);
+    rawIndexToDisplayIndex.set(i, displayIndex);
+  }
+
+  const rawSupports = metadata?.groundingSupports || [];
+  const supports = rawSupports
+    .map((s) => {
+      const endIndex = s?.segment?.endIndex;
+      const chunkIdx = s?.groundingChunkIndices || [];
+      if (typeof endIndex !== "number" || chunkIdx.length === 0) return null;
+      const seenDisplay = new Set();
+      const displayIndices = [];
+      for (const i of chunkIdx) {
+        const d = rawIndexToDisplayIndex.get(i);
+        if (d !== undefined && !seenDisplay.has(d)) {
+          seenDisplay.add(d);
+          displayIndices.push(d);
+        }
       }
-
-      seenUrls.add(source.url);
-      return true;
+      if (displayIndices.length === 0) return null;
+      return {
+        startIndex: s.segment.startIndex ?? 0,
+        endIndex,
+        text: s.segment.text || "",
+        sourceIndices: displayIndices,
+      };
     })
-    .slice(0, 12);
+    .filter(Boolean);
 
   const searches = (metadata?.webSearchQueries || []).slice(0, 8);
-  return { sources, searches };
+  const groundingStatus = computeGroundingStatus(metadata);
+  return { sources, searches, supports, groundingStatus };
+}
+
+// Distinguish how thoroughly the model actually grounded its answer. Callers (and humans)
+// need this signal to decide whether to trust the response. The model often runs searches and
+// then answers from training data anyway — silently — and that's the worst-case failure mode.
+export function computeGroundingStatus(metadata) {
+  if (!metadata) return "unavailable";
+  const queries = metadata.webSearchQueries?.length || 0;
+  const chunks = metadata.groundingChunks?.length || 0;
+  const supports = metadata.groundingSupports?.length || 0;
+  if (queries === 0) return "not_attempted";
+  if (chunks === 0) return "no_sources";
+  if (supports === 0) return "sources_only";
+  return "grounded";
+}
+
+const GROUNDING_WARNINGS = {
+  unavailable:
+    "⚠ NO GROUNDING METADATA. The model did not return any grounding signal — the answer below is unverified and likely from training data alone. Treat with skepticism.",
+  not_attempted:
+    "⚠ NO SEARCH PERFORMED. The model did not run any web searches for this query. The answer below is from training data only and may be out of date or fabricated.",
+  no_sources:
+    "⚠ ZERO GROUNDING SOURCES. The model ran web searches but returned no source pages — the answer below was synthesized from training data, not retrieved evidence. Specific facts (names, dates, numbers) are at high risk of being hallucinated.",
+  sources_only:
+    "⚠ SOURCES BUT NO CLAIM-LEVEL GROUNDING. The model retrieved pages but did not map specific claims to specific sources. Treat the answer as a paraphrase rather than verified fact-by-fact.",
+};
+
+export function groundingWarning(status) {
+  return GROUNDING_WARNINGS[status] || null;
+}
+
+// Splice inline `[N](url)` citation markers into the answer text using groundingSupports.
+// Per the official @google/genai docs, the algorithm is: sort supports by endIndex DESC, then
+// splice citation strings at each endIndex (descending order avoids index drift as we mutate
+// the string). This is the only reliable way to surface "which sentence came from which source"
+// — the model's own prose rarely cites consistently even when instructed to.
+export function applyInlineCitations(text, supports, sources) {
+  if (typeof text !== "string" || text.length === 0) return text;
+  if (!Array.isArray(supports) || supports.length === 0) return text;
+  if (!Array.isArray(sources) || sources.length === 0) return text;
+
+  const sorted = [...supports].sort((a, b) => b.endIndex - a.endIndex);
+  let out = text;
+  for (const s of sorted) {
+    const links = s.sourceIndices
+      .map((i) => {
+        const url = sources[i - 1]?.url;
+        return url ? `[${i}](${url})` : null;
+      })
+      .filter(Boolean);
+    if (links.length === 0) continue;
+    const marker = links.join("");
+    const safeEnd = Math.min(s.endIndex, out.length);
+    out = out.slice(0, safeEnd) + marker + out.slice(safeEnd);
+  }
+  return out;
 }
 
 export function buildToolText(
   text,
-  { sources = [], searches = [], fileWriteError, diagnostics } = {}
+  { sources = [], searches = [], supports = [], groundingStatus = "grounded", fileWriteError, diagnostics } = {}
 ) {
-  let fullResponse = wrapUntrusted(text);
+  // Splice grounding-supports citations BEFORE wrapping/sanitizing so the offsets line up with
+  // the model's original text. The wrapper adds a known prefix; sanitize doesn't change indices.
+  const cited = applyInlineCitations(text, supports, sources);
+  const warning = groundingWarning(groundingStatus);
+  const body = warning ? `${warning}\n\n${cited}` : cited;
+  let fullResponse = wrapUntrusted(body);
 
   if (sources.length > 0) {
     fullResponse += "\n\n---\n**Sources:**\n";
@@ -223,12 +339,20 @@ export function buildToolText(
 
 export function buildStructuredContent(
   text,
-  { sources = [], searches = [], fileWriteError, diagnostics } = {}
+  { sources = [], searches = [], supports = [], groundingStatus = "grounded", fileWriteError, diagnostics } = {}
 ) {
   const result = {
     answer: text,
+    answer_with_citations: applyInlineCitations(text, supports, sources),
+    grounding_status: groundingStatus,
     sources,
     search_queries: [...searches],
+    supports: supports.map((s) => ({
+      start_index: s.startIndex,
+      end_index: s.endIndex,
+      text: s.text,
+      source_indices: s.sourceIndices,
+    })),
     diagnostics: diagnostics
       ? {
           model: diagnostics.model,
@@ -238,6 +362,9 @@ export function buildStructuredContent(
           duration_ms: diagnostics.durationMs,
           ttft_ms: diagnostics.ttftMs ?? null,
           search_queries_count: searches.length,
+          sources_count: sources.length,
+          supports_count: supports.length,
+          grounding_status: groundingStatus,
         }
       : undefined,
   };
@@ -254,6 +381,7 @@ export function formatDiagnostics({
   totalAttempts,
   durationMs,
   ttftMs,
+  groundingStatus,
 }) {
   const parts = [];
   const modelLabel = fellBack ? `${model} (fallback)` : model;
@@ -268,6 +396,9 @@ export function formatDiagnostics({
   }
   if (typeof ttftMs === "number") {
     parts.push(`ttft=${(ttftMs / 1000).toFixed(1)}s`);
+  }
+  if (groundingStatus) {
+    parts.push(`grounding=${groundingStatus}`);
   }
   return `_diagnostics: ${parts.join(" · ")}_`;
 }
