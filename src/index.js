@@ -37,7 +37,11 @@ function printHelp() {
   console.log("  ASK_GOOGLE_THINKING_LEVEL_FLASH_LITE Same for flash-lite (default: SDK default)");
   console.log("  ASK_GOOGLE_ALLOW_FILE_OUTPUT    Set to true to enable output_file writes");
   console.log("  ASK_GOOGLE_OUTPUT_DIR           Base directory allowed for output_file writes");
-  console.log("  ASK_GOOGLE_ENABLED_MODELS       Comma-separated aliases to expose: pro, flash, flash-lite (default: all)\n");
+  console.log("  ASK_GOOGLE_ENABLED_MODELS       Comma-separated aliases to expose: pro, flash, flash-lite (default: all)");
+  console.log("  ASK_GOOGLE_ROUTER_ENABLED       Enable auto-routing (default: true). When false, model defaults to pro.");
+  console.log("  ASK_GOOGLE_ROUTER_MODEL         Model alias used for routing decisions (default: flash-lite)");
+  console.log("  ASK_GOOGLE_ROUTER_TIMEOUT_MS    Hard ceiling for the router call (default: 5000)");
+  console.log("  ASK_GOOGLE_ROUTER_FALLBACK_MODEL Model used when the router fails (default: flash)\n");
   console.log("Options:");
   console.log("  -h, --help        Show this help message");
   console.log("  -v, --version     Show version number");

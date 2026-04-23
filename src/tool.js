@@ -1,11 +1,18 @@
-import { DEFAULT_MODEL, ENABLED_MODELS, MAX_QUESTION_LENGTH, MODEL_ALIASES } from "./config.js";
+import {
+  DEFAULT_MODEL,
+  ENABLED_MODELS,
+  MAX_QUESTION_LENGTH,
+  MODEL_ALIASES,
+  MODEL_PARAM_VALUES,
+  ROUTER_AVAILABLE,
+} from "./config.js";
 import { createInvalidParamsError } from "./errors.js";
 import { wrapUntrusted } from "./sanitize.js";
 
 export const ASK_GOOGLE_TOOL = Object.freeze({
   name: "ask_google",
   description:
-    "Ask an AI researcher with live Google Search grounding (Gemini). Use when you need current/latest facts that post-date your training: versions, releases, recent API or docs changes, breaking news, changelogs, on-demand web research. Do not use for stable language syntax, historical facts, or knowledge already in your training data. Accepts short lookups or multi-paragraph research briefs.",
+    "Gemini with Google Search grounding. Use for current/latest facts that post-date your training: versions, releases, API changes, changelogs, breaking news, on-demand web research. Do not use for stable syntax or knowledge already in your training. Short lookups or multi-paragraph briefs both work.",
   annotations: {
     title: "Ask Google (Gemini + Search Grounding)",
     readOnlyHint: true,
@@ -49,10 +56,11 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
       },
       model: {
         type: "string",
-        description: `Gemini model: 'pro' for deeper synthesis, 'flash' for quick lookups, 'flash-lite' for cheapest/fastest simple facts. Default: '${DEFAULT_MODEL}'.`,
-        enum: ENABLED_MODELS,
+        description: ROUTER_AVAILABLE
+          ? `Google model. 'auto' (default, recommended) picks the right tier automatically. Override with 'pro', 'flash', or 'flash-lite' only if you need a specific one.`
+          : `Google model. Default: '${DEFAULT_MODEL}'.`,
+        enum: MODEL_PARAM_VALUES,
         default: DEFAULT_MODEL,
-        examples: ENABLED_MODELS,
       },
     },
   },
@@ -104,12 +112,24 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
         additionalProperties: true,
         properties: {
           model: { type: "string" },
+          requested_model: { type: "string" },
           fell_back: { type: "boolean" },
           attempts: { type: "integer" },
           total_attempts: { type: "integer" },
           duration_ms: { type: "integer" },
           ttft_ms: { type: ["integer", "null"] },
           search_queries_count: { type: "integer" },
+          router: {
+            type: "object",
+            additionalProperties: true,
+            properties: {
+              picked_model: { type: "string" },
+              duration_ms: { type: "integer" },
+              used_fallback: { type: "boolean" },
+              reason: { type: "string" },
+              snapped_from: { type: "string" },
+            },
+          },
         },
       },
       file_write_error: { type: "string" },
@@ -160,9 +180,9 @@ export function validateAskGoogleArguments(rawArgs = {}) {
     }
   }
 
-  if (!ENABLED_MODELS.includes(model)) {
+  if (!MODEL_PARAM_VALUES.includes(model)) {
     throw createInvalidParamsError(
-      `model must be one of: ${ENABLED_MODELS.join(", ")}. Got: ${model}`
+      `model must be one of: ${MODEL_PARAM_VALUES.join(", ")}. Got: ${model}`
     );
   }
 
@@ -356,6 +376,7 @@ export function buildStructuredContent(
     diagnostics: diagnostics
       ? {
           model: diagnostics.model,
+          requested_model: diagnostics.requestedModel,
           fell_back: Boolean(diagnostics.fellBack),
           attempts: diagnostics.attempts,
           total_attempts: diagnostics.totalAttempts,
@@ -365,6 +386,19 @@ export function buildStructuredContent(
           sources_count: sources.length,
           supports_count: supports.length,
           grounding_status: groundingStatus,
+          ...(diagnostics.router
+            ? {
+                router: {
+                  picked_model: diagnostics.router.pickedModel,
+                  duration_ms: diagnostics.router.durationMs,
+                  used_fallback: Boolean(diagnostics.router.usedFallback),
+                  ...(diagnostics.router.reason ? { reason: diagnostics.router.reason } : {}),
+                  ...(diagnostics.router.snappedFrom
+                    ? { snapped_from: diagnostics.router.snappedFrom }
+                    : {}),
+                },
+              }
+            : {}),
         }
       : undefined,
   };
@@ -376,17 +410,32 @@ export function buildStructuredContent(
 
 export function formatDiagnostics({
   model,
+  requestedModel,
   fellBack = false,
   attempts,
   totalAttempts,
   durationMs,
   ttftMs,
   groundingStatus,
+  router,
 }) {
   const parts = [];
   const modelLabel = fellBack ? `${model} (fallback)` : model;
   if (modelLabel) {
-    parts.push(`model=${modelLabel}`);
+    // Surface routing provenance in the footer: "auto→pro" tells the caller both what they asked
+    // for and what the router (or explicit pick) resolved to, without adding noise for the
+    // common case where they pinned a specific tier.
+    if (requestedModel && requestedModel !== model && requestedModel === "auto") {
+      parts.push(`model=auto→${modelLabel}`);
+    } else {
+      parts.push(`model=${modelLabel}`);
+    }
+  }
+  if (router) {
+    const routerBits = [`${(router.durationMs / 1000).toFixed(1)}s`];
+    if (router.usedFallback) routerBits.push("fallback");
+    if (router.snappedFrom) routerBits.push(`snapped<-${router.snappedFrom}`);
+    parts.push(`router=${routerBits.join("/")}`);
   }
   if (attempts && totalAttempts) {
     parts.push(`attempts=${attempts}/${totalAttempts}`);

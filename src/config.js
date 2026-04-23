@@ -93,13 +93,81 @@ if (enabledModels.length === 0) {
 
 export const ENABLED_MODELS = Object.freeze(enabledModels);
 
-export const DEFAULT_MODEL = (() => {
-  if (ENABLED_MODELS.includes("pro")) {
-    return "pro";
+// Router config — the router itself is just a small classifier call that picks a downstream model.
+// It's optional: ASK_GOOGLE_ROUTER_ENABLED=false disables it entirely (DEFAULT_MODEL then falls
+// back to "pro"/first-enabled, preserving the pre-router behavior).
+export const ROUTER_ENABLED = (() => {
+  const raw = process.env.ASK_GOOGLE_ROUTER_ENABLED;
+  if (raw === "false" || raw === "0") return false;
+  return true;
+})();
+
+export const ROUTER_MODEL_ALIAS = (() => {
+  const raw = process.env.ASK_GOOGLE_ROUTER_MODEL || "flash-lite";
+  if (!VALID_MODELS.includes(raw)) {
+    console.error(
+      `[CONFIG] ASK_GOOGLE_ROUTER_MODEL="${raw}" is not a valid alias (valid: ${VALID_MODELS.join(", ")}); using "flash-lite"`
+    );
+    return "flash-lite";
   }
+  return raw;
+})();
+
+export const ROUTER_TIMEOUT_MS = parsePositiveInteger(
+  process.env.ASK_GOOGLE_ROUTER_TIMEOUT_MS,
+  5_000
+);
+
+// When the router times out, errors, or returns bad output, we collapse to this model.
+// Default is "flash" — the safer middle-ground when we genuinely don't know the query's shape.
+// flash-lite is cheaper but can be shallow on harder queries; pro is slow and currently grounds
+// less reliably. flash splits the difference.
+export const ROUTER_FALLBACK_MODEL = (() => {
+  const raw = process.env.ASK_GOOGLE_ROUTER_FALLBACK_MODEL || "flash";
+  let candidate = raw;
+  if (!VALID_MODELS.includes(candidate)) {
+    console.error(
+      `[CONFIG] ASK_GOOGLE_ROUTER_FALLBACK_MODEL="${raw}" is not a valid alias; defaulting to "flash"`
+    );
+    candidate = "flash";
+  }
+  // Always re-check against ENABLED_MODELS AFTER the valid/default substitution. Otherwise an
+  // invalid env value would short-circuit to "flash" and silently bypass the operator's
+  // ENABLED_MODELS restriction.
+  if (!ENABLED_MODELS.includes(candidate)) {
+    const order = ["flash", "flash-lite", "pro"];
+    const snapped = order.find((m) => ENABLED_MODELS.includes(m)) || ENABLED_MODELS[0];
+    console.error(
+      `[CONFIG] Router fallback "${candidate}" not in ENABLED_MODELS; snapping to "${snapped}"`
+    );
+    return snapped;
+  }
+  return candidate;
+})();
+
+// Router is only actually usable if its own model is in the enabled set. E.g. if someone sets
+// ASK_GOOGLE_ENABLED_MODELS=pro (flash-lite disabled), the router can't run and we fall back to
+// pre-router behavior.
+export const ROUTER_AVAILABLE = ROUTER_ENABLED && ENABLED_MODELS.includes(ROUTER_MODEL_ALIAS);
+
+if (ROUTER_ENABLED && !ROUTER_AVAILABLE && !isDiagnosticFlagInvocation) {
+  console.error(
+    `[CONFIG] Router disabled: router model "${ROUTER_MODEL_ALIAS}" not in ENABLED_MODELS (${ENABLED_MODELS.join(", ")})`
+  );
+}
+
+// Model-param values exposed through the MCP tool schema. "auto" is offered when the router is
+// available; explicit model aliases are always exposed so callers can still pin a tier.
+export const MODEL_PARAM_VALUES = ROUTER_AVAILABLE
+  ? Object.freeze(["auto", ...ENABLED_MODELS])
+  : Object.freeze([...ENABLED_MODELS]);
+
+export const DEFAULT_MODEL = (() => {
+  if (ROUTER_AVAILABLE) return "auto";
+  if (ENABLED_MODELS.includes("pro")) return "pro";
   const fallback = ENABLED_MODELS[0];
   console.error(
-    `[CONFIG] ASK_GOOGLE_ENABLED_MODELS excludes "pro"; default model falls back to "${fallback}"`
+    `[CONFIG] ASK_GOOGLE_ENABLED_MODELS excludes "pro" and router unavailable; default model falls back to "${fallback}"`
   );
   return fallback;
 })();

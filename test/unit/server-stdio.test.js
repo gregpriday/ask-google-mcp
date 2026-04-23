@@ -134,9 +134,14 @@ describe("ASK_GOOGLE_ENABLED_MODELS filtering", () => {
 
       const tool = listResponse.result.tools.find((t) => t.name === "ask_google");
       assert.ok(tool);
-      assert.deepStrictEqual(tool.inputSchema.properties.model.enum, ["flash", "flash-lite"]);
-      assert.strictEqual(tool.inputSchema.properties.model.default, "flash");
-      assert.match(stderr, /default model falls back to "flash"/);
+      // Router is available because flash-lite (the router model) is in the enabled set, so the
+      // model enum is prefixed with "auto" and the default is "auto".
+      assert.deepStrictEqual(tool.inputSchema.properties.model.enum, [
+        "auto",
+        "flash",
+        "flash-lite",
+      ]);
+      assert.strictEqual(tool.inputSchema.properties.model.default, "auto");
     } finally {
       server.kill();
     }

@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { ASK_GOOGLE_TOOL } from "../../src/tool.js";
-import { ENABLED_MODELS, MAX_QUESTION_LENGTH } from "../../src/config.js";
+import { MAX_QUESTION_LENGTH, MODEL_PARAM_VALUES } from "../../src/config.js";
 
 describe("ask_google tool definition", () => {
   it("uses the production tool name", () => {
@@ -46,9 +46,11 @@ describe("ask_google tool definition", () => {
       ASK_GOOGLE_TOOL.inputSchema.properties.question.maxLength,
       MAX_QUESTION_LENGTH
     );
+    // With the router enabled by default, MODEL_PARAM_VALUES includes "auto" in addition to the
+    // concrete enabled aliases.
     assert.deepStrictEqual(
       ASK_GOOGLE_TOOL.inputSchema.properties.model.enum,
-      ENABLED_MODELS
+      MODEL_PARAM_VALUES
     );
   });
 

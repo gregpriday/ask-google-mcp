@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import {
   DEFAULT_MODEL,
+  ENABLED_MODELS,
   FALLBACK_MODEL,
   FILE_OUTPUT_BASE_DIR,
   FILE_OUTPUT_ENABLED,
@@ -12,6 +13,10 @@ import {
   MODEL_TTFT_TIMEOUTS_MS,
   OVERALL_BUDGET_MS,
   REQUEST_TIMEOUT_MS,
+  ROUTER_AVAILABLE,
+  ROUTER_FALLBACK_MODEL,
+  ROUTER_MODEL_ALIAS,
+  ROUTER_TIMEOUT_MS,
 } from "./config.js";
 import {
   classifyGeminiError,
@@ -21,6 +26,7 @@ import {
 import { resolveOutputPath, writeResponseToFile } from "./file-output.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { retryWithBackoff } from "./retry.js";
+import { createRouter } from "./router.js";
 import {
   buildStructuredContent,
   buildToolText,
@@ -227,6 +233,16 @@ export function createAskGoogleHandler({
   fileOutputBaseDir = FILE_OUTPUT_BASE_DIR,
   getApiKey = () => process.env.GOOGLE_API_KEY,
   createClient = (apiKey) => new GoogleGenAI({ apiKey }),
+  // Router is optional and injectable for testing. If not provided, we build a default one
+  // using this handler's config + lazy-loaded client. When ROUTER_AVAILABLE is false (e.g.,
+  // router disabled via env or router model not enabled), `router` stays null and `model: "auto"`
+  // collapses to the static routerFallbackModel without a network call.
+  router: externalRouter,
+  routerEnabled = ROUTER_AVAILABLE,
+  routerModelAlias = ROUTER_MODEL_ALIAS,
+  routerTimeoutMs = ROUTER_TIMEOUT_MS,
+  routerFallbackModel = ROUTER_FALLBACK_MODEL,
+  enabledModels = ENABLED_MODELS,
 } = {}) {
   let cachedApiKey;
   let cachedClient;
@@ -259,6 +275,21 @@ export function createAskGoogleHandler({
     return Math.max(MIN_ATTEMPT_BUDGET_MS, Math.min(...caps));
   }
 
+  // Build the router lazily — it holds a reference to getClient, which itself pulls the API key
+  // at call time. This keeps the "no API key on startup" behavior intact.
+  let router = externalRouter ?? null;
+  if (!router && routerEnabled) {
+    router = createRouter({
+      getClient,
+      logger,
+      routerModelAlias,
+      enabledModels,
+      timeoutMs: routerTimeoutMs,
+      fallbackModel: routerFallbackModel,
+      now,
+    });
+  }
+
   return async function handleAskGoogle(rawArgs = {}, { notifyProgress = null } = {}) {
     const { question, outputFile, model: requestedModel = DEFAULT_MODEL } =
       validateAskGoogleArguments(rawArgs);
@@ -283,13 +314,58 @@ export function createAskGoogleHandler({
 
     const startedAt = Date.now();
     const diagnostics = {
+      requestedModel,
       model: requestedModel,
       fellBack: false,
       attempts: 0,
       totalAttempts: maxRetries + 1,
       durationMs: 0,
       ttftMs: null,
+      router: null,
     };
+
+    // Resolve "auto" to a concrete model via the router (or router-fallback if no router exists).
+    // The rest of the retry loop doesn't know or care whether the model came from a router call
+    // or an explicit caller-provided value.
+    let resolvedRequestedModel = requestedModel;
+    if (requestedModel === "auto") {
+      if (router) {
+        emitProgress("Routing query...");
+        const routerResult = await router(question);
+        resolvedRequestedModel = routerResult.model;
+        diagnostics.router = {
+          pickedModel: routerResult.model,
+          durationMs: routerResult.durationMs,
+          usedFallback: Boolean(routerResult.usedFallback),
+          reason: routerResult.reason,
+          snappedFrom: routerResult.snappedFrom,
+        };
+        logger.error(
+          `[ROUTER] picked=${routerResult.model} duration_ms=${routerResult.durationMs}` +
+            (routerResult.usedFallback ? ` fallback_reason="${routerResult.reason}"` : "") +
+            (routerResult.snappedFrom ? ` snapped_from=${routerResult.snappedFrom}` : "")
+        );
+        emitProgress(
+          routerResult.usedFallback
+            ? `Router fell back to ${routerResult.model} (${routerResult.reason})`
+            : `Routed to ${routerResult.model}`
+        );
+      } else {
+        // Router disabled at config load (e.g., router model not in ENABLED_MODELS). Collapse
+        // to the static fallback without a network call and record the reason for observability.
+        resolvedRequestedModel = routerFallbackModel;
+        diagnostics.router = {
+          pickedModel: routerFallbackModel,
+          durationMs: 0,
+          usedFallback: true,
+          reason: "Router not available (disabled or misconfigured)",
+        };
+        logger.error(
+          `[ROUTER] unavailable; using static fallback=${routerFallbackModel}`
+        );
+      }
+    }
+    diagnostics.model = resolvedRequestedModel;
 
     try {
       const systemInstruction = buildSystemPrompt(systemPromptTemplate, now());
@@ -301,7 +377,7 @@ export function createAskGoogleHandler({
       const streamResult = await retryWithBackoff(
         async ({ attempt, remainingBudgetMs }) => {
           const { model: attemptModel, fellBack } = selectAttemptModel({
-            requestedModel,
+            requestedModel: resolvedRequestedModel,
             attempt,
             totalAttempts,
             fallbackModel,
@@ -397,7 +473,12 @@ export function createAskGoogleHandler({
         {
           maxRetries,
           initialDelayMs: initialRetryDelayMs,
-          overallBudgetMs,
+          // Router time must count against the overall budget — otherwise wall time can
+          // exceed the advertised OVERALL_BUDGET_MS by up to ROUTER_TIMEOUT_MS. Subtracting
+          // the measured router latency keeps the overall ceiling honest; if the router
+          // consumed nearly all the budget, retryWithBackoff will correctly refuse to start
+          // an attempt.
+          overallBudgetMs: overallBudgetMs - (diagnostics.router?.durationMs ?? 0),
           minAttemptBudgetMs,
           shouldRetry: isRetryableGeminiError,
           onRetry: ({ attempt, totalAttempts: total, delayMs, error, attemptDurationMs, remainingBudgetMs }) => {

@@ -140,6 +140,14 @@ function createHandler(options = {}) {
   };
   const logger = options.logger || { error: () => {} };
 
+  // Default mock router returns "pro" with zero latency. Tests that don't pass an explicit model
+  // rely on this to preserve the pre-router default behavior (default model = pro). Tests that
+  // need different routing behavior inject their own `router` via options.
+  const router =
+    options.router !== undefined
+      ? options.router
+      : async () => ({ model: "pro", durationMs: 0, usedFallback: false });
+
   const handler = createAskGoogleHandler({
     logger,
     systemPromptTemplate: "Current date: {{CURRENT_DATE}}",
@@ -160,6 +168,9 @@ function createHandler(options = {}) {
     createClient: () => ({
       models: createMockModels(planState),
     }),
+    router,
+    routerEnabled: options.routerEnabled,
+    routerFallbackModel: options.routerFallbackModel,
   });
 
   return { handler, createdModels, planState };
@@ -236,10 +247,11 @@ describe("validateAskGoogleArguments", () => {
   });
 
   it("returns normalized arguments", () => {
+    // Default model is "auto" when the router is available (the production default).
     assert.deepStrictEqual(validateAskGoogleArguments({ question: "test" }), {
       question: "test",
       outputFile: undefined,
-      model: "pro",
+      model: "auto",
     });
   });
 
@@ -247,7 +259,15 @@ describe("validateAskGoogleArguments", () => {
     assert.deepStrictEqual(validateAskGoogleArguments({ query: "test" }), {
       question: "test",
       outputFile: undefined,
-      model: "pro",
+      model: "auto",
+    });
+  });
+
+  it("accepts 'auto' as a model value", () => {
+    assert.deepStrictEqual(validateAskGoogleArguments({ question: "test", model: "auto" }), {
+      question: "test",
+      outputFile: undefined,
+      model: "auto",
     });
   });
 
@@ -957,14 +977,16 @@ describe("createAskGoogleHandler", () => {
       notifications.length >= 1,
       `expected at least one progress notification, got ${notifications.length}`
     );
-    // First notification announces the attempt; progress counters must be strictly increasing.
+    // Progress counters must be strictly increasing across the whole sequence, regardless of
+    // how many phases (routing, attempts, streaming) emit.
     for (let i = 1; i < notifications.length; i += 1) {
       assert.ok(
         notifications[i].progress > notifications[i - 1].progress,
         "progress values must strictly increase"
       );
     }
-    assert.match(notifications[0].message, /Attempt 1\/3 via pro/);
+    const attemptMsg = notifications.find((n) => /Attempt 1\/3 via pro/.test(n.message));
+    assert.ok(attemptMsg, "expected a progress notification announcing attempt 1/3 via pro");
   });
 
   it("does not emit progress notifications when no callback is supplied", async () => {
