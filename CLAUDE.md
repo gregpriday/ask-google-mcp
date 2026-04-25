@@ -58,7 +58,7 @@ The server implements a **single-tool MCP server** following the stdio transport
 
 3. **Request Handling** (src/index.js:179-326)
    - Handles `CallToolRequestSchema` for tool execution
-   - **Input validation**: null/undefined check → type check → empty string check → length check (max 10,000 chars)
+   - **Input validation**: null/undefined check → type check → empty string check → length check (default 32,000 chars / ~10k tokens; configurable via `ASK_GOOGLE_MAX_QUESTION_LENGTH`)
    - **Gemini integration**: Uses `getGenerativeModel()` with `tools: [{ googleSearch: {} }]` for search grounding
    - **Response formatting**: Extracts grounding metadata (sources, search queries), caps at 12 sources and 8 queries, then appends to response text
    - **Error categorization**: Maps Gemini errors to MCP-friendly error codes (AUTH_ERROR, QUOTA_ERROR, TIMEOUT_ERROR, API_ERROR)

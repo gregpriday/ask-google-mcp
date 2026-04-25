@@ -171,7 +171,10 @@ export const DEFAULT_MODEL = (() => {
   );
   return fallback;
 })();
-export const MAX_QUESTION_LENGTH = 4_000;
+export const MAX_QUESTION_LENGTH = parsePositiveInteger(
+  process.env.ASK_GOOGLE_MAX_QUESTION_LENGTH,
+  32_000
+);
 export const MAX_RETRIES = parsePositiveInteger(process.env.ASK_GOOGLE_MAX_RETRIES, 2);
 export const INITIAL_RETRY_DELAY_MS = parsePositiveInteger(
   process.env.ASK_GOOGLE_INITIAL_RETRY_DELAY_MS,

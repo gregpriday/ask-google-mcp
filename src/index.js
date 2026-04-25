@@ -39,26 +39,49 @@ function printHelp() {
   console.log("  ASK_GOOGLE_ROUTER_ENABLED       Enable auto-routing (default: true). When false, model defaults to pro.");
   console.log("  ASK_GOOGLE_ROUTER_MODEL         Model alias used for routing decisions (default: flash-lite)");
   console.log("  ASK_GOOGLE_ROUTER_TIMEOUT_MS    Hard ceiling for the router call (default: 5000)");
-  console.log("  ASK_GOOGLE_ROUTER_FALLBACK_MODEL Model used when the router fails (default: flash)\n");
+  console.log("  ASK_GOOGLE_ROUTER_FALLBACK_MODEL Model used when the router fails (default: flash)");
+  console.log("  ASK_GOOGLE_MAX_QUESTION_LENGTH  Max characters per question (default: 32000, ~10k tokens)\n");
   console.log("Options:");
   console.log("  -h, --help        Show this help message");
   console.log("  -v, --version     Show version number");
 }
 
+let unhandledRejectionCount = 0;
+
 function installProcessHandlers() {
-  process.on("unhandledRejection", (reason, promise) => {
-    console.error("[FATAL] Unhandled Rejection at:", promise, "Reason:", reason);
-    process.exit(1);
+  // Stay alive on unhandled promise rejections. This server is a stateless Gemini wrapper
+  // and can have multiple concurrent in-flight tool calls — exiting on a stray rejection
+  // (e.g. a network race deep in the SDK) torpedoes every other call, which surfaces to
+  // clients as MCP error -32000 "Connection closed". Log loudly instead so the next time
+  // it happens we have evidence to chase.
+  process.on("unhandledRejection", (reason) => {
+    unhandledRejectionCount += 1;
+    const ts = new Date().toISOString();
+    const message = reason instanceof Error ? reason.message : String(reason);
+    const stack = reason instanceof Error ? reason.stack : null;
+    console.error(
+      `[${ts}] [UNHANDLED_REJECTION] count=${unhandledRejectionCount} message=${JSON.stringify(message)}`
+    );
+    if (stack) {
+      console.error(stack);
+    }
   });
 
+  // Uncaught exceptions can leave the V8 heap in an inconsistent state, so the safe move
+  // is still to exit and let the MCP client respawn us. Log richly first.
   process.on("uncaughtException", (error) => {
-    console.error("[FATAL] Uncaught Exception:", error.message, error.stack);
+    const ts = new Date().toISOString();
+    console.error(
+      `[${ts}] [UNCAUGHT_EXCEPTION] message=${JSON.stringify(error?.message ?? String(error))}`
+    );
+    if (error?.stack) {
+      console.error(error.stack);
+    }
     process.exit(1);
   });
 
   // When the MCP client (e.g. Claude Code) kills the server mid-write, the next write to
-  // stdout throws EPIPE. Silently exit — there's no one left to log to anyway, and letting
-  // it bubble up triggers the [FATAL] handler above with a confusing message.
+  // stdout throws EPIPE. Silently exit — there's no one left to log to anyway.
   process.stdout.on("error", (err) => {
     if (err?.code === "EPIPE") {
       process.exit(0);
