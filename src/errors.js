@@ -47,6 +47,12 @@ export function isRetryableGeminiError(error) {
     return false;
   }
 
+  // Response-size guardrail tripped. Retrying produces the same oversized response, so
+  // this is permanently non-retryable.
+  if (error?.code === "RESPONSE_TOO_LARGE") {
+    return false;
+  }
+
   // Prefer HTTP status when available (new SDK): 4xx (except 408/429) and 501 are permanent.
   const status = getApiStatus(error);
   if (status !== null) {
@@ -148,6 +154,10 @@ export function classifyGeminiError(error) {
 
   if (lowerMessage.includes("budget")) {
     return `[BUDGET_EXHAUSTED] Retry budget exhausted before a successful response: ${message}`;
+  }
+
+  if (error?.code === "RESPONSE_TOO_LARGE") {
+    return `[RESPONSE_TOO_LARGE] ${message}`;
   }
 
   return `[API_ERROR] Gemini API error: ${message}`;

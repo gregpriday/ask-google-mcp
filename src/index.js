@@ -40,13 +40,16 @@ function printHelp() {
   console.log("  ASK_GOOGLE_ROUTER_MODEL         Model alias used for routing decisions (default: flash-lite)");
   console.log("  ASK_GOOGLE_ROUTER_TIMEOUT_MS    Hard ceiling for the router call (default: 5000)");
   console.log("  ASK_GOOGLE_ROUTER_FALLBACK_MODEL Model used when the router fails (default: flash)");
-  console.log("  ASK_GOOGLE_MAX_QUESTION_LENGTH  Max characters per question (default: 32000, ~10k tokens)\n");
+  console.log("  ASK_GOOGLE_MAX_QUESTION_LENGTH  Max characters per question (default: 64000, ~16k tokens)\n");
   console.log("Options:");
   console.log("  -h, --help        Show this help message");
   console.log("  -v, --version     Show version number");
 }
 
 let unhandledRejectionCount = 0;
+const recentRejectionTimestamps = [];
+const REJECTION_BURST_WINDOW_MS = 60_000;
+const REJECTION_BURST_THRESHOLD = 5;
 
 function installProcessHandlers() {
   // Stay alive on unhandled promise rejections. This server is a stateless Gemini wrapper
@@ -64,6 +67,22 @@ function installProcessHandlers() {
     );
     if (stack) {
       console.error(stack);
+    }
+
+    // Burst detector: if rejections start piling up in a short window, the operator needs
+    // a louder signal that something is genuinely wrong (vs. one stray race). We still
+    // don't exit — that decision belongs to the operator — but we surface a HEALTH_WARNING
+    // they can grep for.
+    const now = Date.now();
+    recentRejectionTimestamps.push(now);
+    while (recentRejectionTimestamps[0] < now - REJECTION_BURST_WINDOW_MS) {
+      recentRejectionTimestamps.shift();
+    }
+    if (recentRejectionTimestamps.length >= REJECTION_BURST_THRESHOLD) {
+      console.error(
+        `[${ts}] [HEALTH_WARNING] ${recentRejectionTimestamps.length} unhandled rejections in last ` +
+          `${REJECTION_BURST_WINDOW_MS / 1000}s — server is degraded but staying alive. Consider restarting the MCP.`
+      );
     }
   });
 
@@ -88,6 +107,19 @@ function installProcessHandlers() {
     }
   });
 
+  // Parent disconnected (closed our stdin). Without this, Node may keep the event loop
+  // alive even though we have no one to talk to, or worse, write framing to a dead pipe.
+  process.stdin.on("end", () => {
+    console.error(`[${new Date().toISOString()}] [STDIN_CLOSED] parent disconnected, exiting`);
+    process.exit(0);
+  });
+  process.stdin.on("error", (err) => {
+    console.error(
+      `[${new Date().toISOString()}] [STDIN_ERROR] code=${err?.code} message=${JSON.stringify(err?.message ?? String(err))}`
+    );
+    process.exit(0);
+  });
+
   process.on("SIGINT", () => {
     console.error("Received SIGINT, shutting down gracefully...");
     process.exit(0);
@@ -95,6 +127,13 @@ function installProcessHandlers() {
 
   process.on("SIGTERM", () => {
     console.error("Received SIGTERM, shutting down gracefully...");
+    process.exit(0);
+  });
+
+  // SIGHUP fires when the controlling terminal goes away (or sometimes on `npm run dev`
+  // file-change restarts). Exit cleanly so the next call respawns us cleanly too.
+  process.on("SIGHUP", () => {
+    console.error("Received SIGHUP, shutting down gracefully...");
     process.exit(0);
   });
 }

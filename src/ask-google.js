@@ -34,6 +34,10 @@ import {
 
 const SAFETY_BUFFER_MS = 2_000;
 const MIN_ATTEMPT_BUDGET_MS = 3_000;
+// Hard cap on accumulated streaming text per attempt. Defends against a runaway Gemini
+// response (or a buggy stream that never terminates). 500 KB is ~100x the longest realistic
+// answer we see (deep research briefs land around 5 KB), so this only fires on pathology.
+const MAX_RESPONSE_CHARS = 500_000;
 
 // Pick the model to use for a given attempt. If the user asked for pro and the last attempt
 // is about to run (and it's not the only attempt), swap to the fallback model so we return
@@ -148,6 +152,11 @@ async function streamWithTimeouts(
       if (chunkText) {
         textParts.push(chunkText);
         charCount += chunkText.length;
+        if (charCount > MAX_RESPONSE_CHARS) {
+          abortReason = "RESPONSE_TOO_LARGE";
+          controller.abort();
+          // Loop will throw on the next iteration as the abort propagates.
+        }
       }
 
       const grounding = readChunkGrounding(chunk);
@@ -196,6 +205,13 @@ async function streamWithTimeouts(
     }
     if (abortReason === "HARD_CEILING") {
       throw new Error(`Request exceeded hard ceiling of ${hardCeilingMs}ms`);
+    }
+    if (abortReason === "RESPONSE_TOO_LARGE") {
+      const err = new Error(
+        `[RESPONSE_TOO_LARGE] Response exceeded ${MAX_RESPONSE_CHARS} characters; aborting to protect server memory`
+      );
+      err.code = "RESPONSE_TOO_LARGE";
+      throw err;
     }
     throw error;
   } finally {
