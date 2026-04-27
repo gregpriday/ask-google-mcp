@@ -137,8 +137,15 @@ describe("server process — unhandled rejection resilience", () => {
     server.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    // Wait long enough for the rejection to fire (fixture schedules it at +100ms).
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    // Poll stderr until the expected rejection log appears, up to a generous ceiling.
+    // CI runners are slower than dev machines and a fixed-duration wait flakes.
+    const expected = /\[UNHANDLED_REJECTION\] count=\d+ message="simulated_unhandled_rejection"/;
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (expected.test(stderr)) break;
+      if (server.exitCode !== null) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
   });
 
   after(() => {
