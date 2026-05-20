@@ -4,6 +4,8 @@ import {
   ENABLED_MODELS,
   FALLBACK_MODEL,
   INITIAL_RETRY_DELAY_MS,
+  MAX_OUTPUT_TOKENS,
+  MAX_RESPONSE_CHARS,
   MAX_RETRIES,
   MODEL_INACTIVITY_TIMEOUTS_MS,
   MODEL_THINKING_LEVELS,
@@ -34,10 +36,6 @@ import {
 
 const SAFETY_BUFFER_MS = 2_000;
 const MIN_ATTEMPT_BUDGET_MS = 3_000;
-// Hard cap on accumulated streaming text per attempt. Defends against a runaway Gemini
-// response (or a buggy stream that never terminates). 500 KB is ~100x the longest realistic
-// answer we see (deep research briefs land around 5 KB), so this only fires on pathology.
-const MAX_RESPONSE_CHARS = 500_000;
 
 // Pick the model to use for a given attempt. If the user asked for pro and the last attempt
 // is about to run (and it's not the only attempt), swap to the fallback model so we return
@@ -118,6 +116,7 @@ async function streamWithTimeouts(
       systemInstruction,
       tools,
       abortSignal: controller.signal,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
     };
     if (thinkingConfig) {
       config.thinkingConfig = thinkingConfig;
@@ -518,6 +517,7 @@ export function createAskGoogleHandler({
         searches,
         supports,
         groundingStatus,
+        finishReason: streamResult.finishReason,
         diagnostics,
       });
 
@@ -526,6 +526,7 @@ export function createAskGoogleHandler({
         searches,
         supports,
         groundingStatus,
+        finishReason: streamResult.finishReason,
         diagnostics,
       });
 

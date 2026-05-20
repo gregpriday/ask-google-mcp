@@ -59,6 +59,7 @@ The server implements a **single-tool MCP server** following the stdio transport
 3. **Request Handling** (src/index.js:179-326)
    - Handles `CallToolRequestSchema` for tool execution
    - **Input validation**: null/undefined check → type check → empty string check → length check (default 64,000 chars / ~16k tokens; configurable via `ASK_GOOGLE_MAX_QUESTION_LENGTH`)
+   - **Output caps**: Gemini's `maxOutputTokens` is set explicitly (default 32,768, via `ASK_GOOGLE_MAX_OUTPUT_TOKENS`) and a streaming hard cap of 2 MB (via `ASK_GOOGLE_MAX_RESPONSE_CHARS`) guards against runaway responses. When Gemini hits its token budget mid-answer (`finishReason=MAX_TOKENS`), the response is flagged with a `⚠ RESPONSE TRUNCATED` warning and `truncated: true` in `structuredContent` so callers don't mistake a partial answer for a complete one.
    - **Gemini integration**: Uses `getGenerativeModel()` with `tools: [{ googleSearch: {} }]` for search grounding
    - **Response formatting**: Extracts grounding metadata (sources, search queries), caps at 12 sources and 8 queries, then appends to response text
    - **Error categorization**: Maps Gemini errors to MCP-friendly error codes (AUTH_ERROR, QUOTA_ERROR, TIMEOUT_ERROR, API_ERROR)
@@ -71,7 +72,7 @@ The server implements a **single-tool MCP server** following the stdio transport
 
 **Model selection**:
 - Tool param values: `auto` (default), `pro`, `flash`, `flash-lite`. `auto` is added only when the router is available.
-- Model map: `pro` → `gemini-3.1-pro-preview`, `flash` → `gemini-3-flash-preview`, `flash-lite` → `gemini-3.1-flash-lite-preview`
+- Model map: `pro` → `gemini-3.1-pro-preview`, `flash` → `gemini-3.5-flash`, `flash-lite` → `gemini-3.1-flash-lite`
 - Model is configured with `systemInstruction` loaded from `src/system-prompt.txt` (cached at startup, date injected per request as ISO-8601)
 - System prompt optimized for AI-to-AI communication (terse, direct, no conversational fluff)
 
@@ -178,8 +179,8 @@ Sources and search queries are **optional** (only included if grounding metadata
 
 The server supports three models selectable per-query via the `model` parameter:
 - `pro` (default) → `gemini-3.1-pro-preview` — Advanced reasoning with search grounding
-- `flash` → `gemini-3-flash-preview` — Fast and cost-effective for simple lookups
-- `flash-lite` → `gemini-3.1-flash-lite-preview` — Fastest and cheapest for simple factual queries
+- `flash` → `gemini-3.5-flash` — Fast and cost-effective for simple lookups
+- `flash-lite` → `gemini-3.1-flash-lite` — Fastest and cheapest for simple factual queries
 - Model map is defined in `src/index.js` in the `modelMap` object
 
 ## Release Process

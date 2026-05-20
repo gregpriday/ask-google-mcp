@@ -29,8 +29,8 @@ function parsePositiveInteger(value, fallback) {
 }
 
 export const MODEL_ALIASES = {
-  flash: process.env.ASK_GOOGLE_MODEL_FLASH || "gemini-3-flash-preview",
-  "flash-lite": process.env.ASK_GOOGLE_MODEL_FLASH_LITE || "gemini-3.1-flash-lite-preview",
+  flash: process.env.ASK_GOOGLE_MODEL_FLASH || "gemini-3.5-flash",
+  "flash-lite": process.env.ASK_GOOGLE_MODEL_FLASH_LITE || "gemini-3.1-flash-lite",
   pro: process.env.ASK_GOOGLE_MODEL_PRO || "gemini-3.1-pro-preview",
 };
 
@@ -174,6 +174,24 @@ export const DEFAULT_MODEL = (() => {
 export const MAX_QUESTION_LENGTH = parsePositiveInteger(
   process.env.ASK_GOOGLE_MAX_QUESTION_LENGTH,
   64_000
+);
+
+// Hard cap on accumulated streaming text per attempt. Defends against a runaway Gemini
+// response or a stream that never terminates. 2 MB headroom is well above the largest
+// realistic answer (deep research briefs land around 5–20 KB) but high enough that a
+// genuinely long synthesis won't hit it. Configurable so operators can raise it if they
+// have a use case (e.g., bulk extraction) that pushes past the default.
+export const MAX_RESPONSE_CHARS = parsePositiveInteger(
+  process.env.ASK_GOOGLE_MAX_RESPONSE_CHARS,
+  2_000_000
+);
+
+// Cap on Gemini's own output token budget. Without this, Gemini applies its model-specific
+// default which can be lower than we want for grounded answers with long source synthesis.
+// 32K tokens ≈ 128 KB of text — leaves plenty of room before the char cap kicks in.
+export const MAX_OUTPUT_TOKENS = parsePositiveInteger(
+  process.env.ASK_GOOGLE_MAX_OUTPUT_TOKENS,
+  32_768
 );
 export const MAX_RETRIES = parsePositiveInteger(process.env.ASK_GOOGLE_MAX_RETRIES, 2);
 export const INITIAL_RETRY_DELAY_MS = parsePositiveInteger(

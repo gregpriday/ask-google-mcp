@@ -114,8 +114,8 @@ ASK_GOOGLE_INITIAL_RETRY_DELAY_MS=1000
 
 # Optional model alias overrides
 # ASK_GOOGLE_MODEL_PRO=gemini-3.1-pro-preview
-# ASK_GOOGLE_MODEL_FLASH=gemini-3-flash-preview
-# ASK_GOOGLE_MODEL_FLASH_LITE=gemini-3.1-flash-lite-preview
+# ASK_GOOGLE_MODEL_FLASH=gemini-3.5-flash
+# ASK_GOOGLE_MODEL_FLASH_LITE=gemini-3.1-flash-lite
 ```
 
 ## Runtime Behavior
@@ -140,8 +140,8 @@ ASK_GOOGLE_INITIAL_RETRY_DELAY_MS=1000
 ### Model aliases
 
 - `pro` -> `gemini-3.1-pro-preview`
-- `flash` -> `gemini-3-flash-preview`
-- `flash-lite` -> `gemini-3.1-flash-lite-preview`
+- `flash` -> `gemini-3.5-flash`
+- `flash-lite` -> `gemini-3.1-flash-lite`
 
 Those defaults can be overridden with environment variables if Google renames preview models.
 

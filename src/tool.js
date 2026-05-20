@@ -271,6 +271,15 @@ export function groundingWarning(status) {
   return GROUNDING_WARNINGS[status] || null;
 }
 
+// Gemini hit its output token budget mid-answer. The text up to the cut-off is still useful,
+// but the calling agent needs an unambiguous signal so it can decide whether to retry with a
+// narrower scope, request a continuation, or proceed with what it got. Without this flag the
+// truncation is invisible — the caller sees a complete-looking response that ends mid-sentence.
+export function truncationWarning(finishReason) {
+  if (finishReason !== "MAX_TOKENS") return null;
+  return "⚠ RESPONSE TRUNCATED. Gemini hit its maximum output token budget before completing this answer. The text below is partial — the final sentence/section is likely cut off. Consider asking a narrower question or requesting a continuation.";
+}
+
 // Splice inline `[N](url)` citation markers into the answer text using groundingSupports.
 // Per the official @google/genai docs, the algorithm is: sort supports by endIndex DESC, then
 // splice citation strings at each endIndex (descending order avoids index drift as we mutate
@@ -300,13 +309,15 @@ export function applyInlineCitations(text, supports, sources) {
 
 export function buildToolText(
   text,
-  { sources = [], searches = [], supports = [], groundingStatus = "grounded", diagnostics } = {}
+  { sources = [], searches = [], supports = [], groundingStatus = "grounded", finishReason, diagnostics } = {}
 ) {
   // Splice grounding-supports citations BEFORE wrapping/sanitizing so the offsets line up with
   // the model's original text. The wrapper adds a known prefix; sanitize doesn't change indices.
   const cited = applyInlineCitations(text, supports, sources);
-  const warning = groundingWarning(groundingStatus);
-  const body = warning ? `${warning}\n\n${cited}` : cited;
+  const warnings = [groundingWarning(groundingStatus), truncationWarning(finishReason)].filter(
+    Boolean
+  );
+  const body = warnings.length > 0 ? `${warnings.join("\n\n")}\n\n${cited}` : cited;
   let fullResponse = wrapUntrusted(body);
 
   if (sources.length > 0) {
@@ -332,12 +343,14 @@ export function buildToolText(
 
 export function buildStructuredContent(
   text,
-  { sources = [], searches = [], supports = [], groundingStatus = "grounded", diagnostics } = {}
+  { sources = [], searches = [], supports = [], groundingStatus = "grounded", finishReason, diagnostics } = {}
 ) {
   return {
     answer: text,
     answer_with_citations: applyInlineCitations(text, supports, sources),
     grounding_status: groundingStatus,
+    truncated: finishReason === "MAX_TOKENS",
+    finish_reason: finishReason ?? null,
     sources,
     search_queries: [...searches],
     supports: supports.map((s) => ({

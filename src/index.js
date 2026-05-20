@@ -40,7 +40,9 @@ function printHelp() {
   console.log("  ASK_GOOGLE_ROUTER_MODEL         Model alias used for routing decisions (default: flash-lite)");
   console.log("  ASK_GOOGLE_ROUTER_TIMEOUT_MS    Hard ceiling for the router call (default: 5000)");
   console.log("  ASK_GOOGLE_ROUTER_FALLBACK_MODEL Model used when the router fails (default: flash)");
-  console.log("  ASK_GOOGLE_MAX_QUESTION_LENGTH  Max characters per question (default: 64000, ~16k tokens)\n");
+  console.log("  ASK_GOOGLE_MAX_QUESTION_LENGTH  Max characters per question (default: 64000, ~16k tokens)");
+  console.log("  ASK_GOOGLE_MAX_RESPONSE_CHARS   Hard cap on streamed response chars (default: 2000000, ~2 MB)");
+  console.log("  ASK_GOOGLE_MAX_OUTPUT_TOKENS    Gemini output token budget per attempt (default: 32768)\n");
   console.log("Options:");
   console.log("  -h, --help        Show this help message");
   console.log("  -v, --version     Show version number");
