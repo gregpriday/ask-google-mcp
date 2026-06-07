@@ -165,7 +165,9 @@ async function main() {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Gemini MCP server running on stdio");
+  // No startup banner: some MCP clients (e.g. Claude Code 2.1.168) capture any
+  // stderr emitted during startup as an [ERROR] and mark the server as failed,
+  // even though the connection succeeds. stderr is reserved for real failures.
 }
 
 main().catch((error) => {
