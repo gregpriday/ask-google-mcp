@@ -48,10 +48,6 @@ const OPTIONAL_ENV_VARS = [
     },
   },
   {
-    name: "ASK_GOOGLE_MODEL_PRO",
-    description: "Override the model id used for the 'pro' alias",
-  },
-  {
     name: "ASK_GOOGLE_MODEL_FLASH",
     description: "Override the model id used for the 'flash' alias",
   },
@@ -62,12 +58,12 @@ const OPTIONAL_ENV_VARS = [
   {
     name: "ASK_GOOGLE_ENABLED_MODELS",
     description:
-      "Comma-separated model aliases to expose (default: all). Valid aliases: pro, flash, flash-lite.",
+      "Comma-separated model aliases to expose (default: all). Valid aliases: flash, flash-lite.",
     validator: (value) => {
       if (!value || !value.trim()) {
         return null;
       }
-      const validAliases = ["pro", "flash", "flash-lite"];
+      const validAliases = ["flash", "flash-lite"];
       const tokens = value
         .split(",")
         .map((token) => token.trim())

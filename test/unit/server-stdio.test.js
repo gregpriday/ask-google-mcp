@@ -170,7 +170,7 @@ describe("ASK_GOOGLE_ENABLED_MODELS filtering", () => {
           name: "ask_google",
           arguments: {
             question: "anything",
-            model: "pro",
+            model: "flash-lite",
           },
         },
       });

@@ -113,7 +113,6 @@ ASK_GOOGLE_INITIAL_RETRY_DELAY_MS=1000
 # ASK_GOOGLE_ROUTER_FALLBACK_MODEL=flash
 
 # Optional model alias overrides
-# ASK_GOOGLE_MODEL_PRO=gemini-3.1-pro-preview
 # ASK_GOOGLE_MODEL_FLASH=gemini-3.5-flash
 # ASK_GOOGLE_MODEL_FLASH_LITE=gemini-3.1-flash-lite
 ```
@@ -135,29 +134,27 @@ ASK_GOOGLE_INITIAL_RETRY_DELAY_MS=1000
 ### Inputs
 
 - `question` - required string, 1 to 4,000 characters (also accepted as `query` alias; do not set both)
-- `model` - optional: `auto` (default), `pro`, `flash`, or `flash-lite`
+- `model` - optional: `auto` (default), `flash`, or `flash-lite`
 
 ### Model aliases
 
-- `pro` -> `gemini-3.1-pro-preview`
 - `flash` -> `gemini-3.5-flash`
 - `flash-lite` -> `gemini-3.1-flash-lite`
 
-Those defaults can be overridden with environment variables if Google renames preview models.
+Those defaults can be overridden with environment variables if Google renames preview models. The legacy value `pro` is still accepted for backward compatibility and is routed to `flash`.
 
 ### Auto-routing (default)
 
 When `model` is `auto` (the default), the server runs a tiny classifier call on Flash-Lite to pick the downstream tier based on query complexity:
 
 - **flash-lite** — simple lookups, single facts, current versions, API signatures, math, trivia
-- **flash** — research briefs, multi-source comparisons, code generation needing current syntax, "what changed in X" questions
-- **pro** — deep reasoning, recommendations with trade-offs, architecture/strategy/migration decisions, opinion questions
+- **flash** — research briefs, multi-source synthesis, comparisons, reasoned trade-off/migration decisions, code generation needing current syntax, "what changed in X" questions
 
 The router has a tight timeout (5s by default) and strict JSON enum output. If it times out, fails, or returns something unusable, the server falls back to `flash` (configurable via `ASK_GOOGLE_ROUTER_FALLBACK_MODEL`) and proceeds with the normal grounded call.
 
-You can still pin a specific model (`pro`, `flash`, `flash-lite`) to bypass the router. To disable auto-routing entirely and restore the old default-model behavior, set `ASK_GOOGLE_ROUTER_ENABLED=false`.
+You can still pin a specific model (`flash`, `flash-lite`) to bypass the router. To disable auto-routing entirely and restore the old default-model behavior, set `ASK_GOOGLE_ROUTER_ENABLED=false`.
 
-The routing decision is surfaced in the response's `diagnostics.router` block and in the diagnostics footer text (e.g., `model=auto→pro · router=0.4s`).
+The routing decision is surfaced in the response's `diagnostics.router` block and in the diagnostics footer text (e.g., `model=auto→flash · router=0.4s`).
 
 ## Example Tool Calls
 

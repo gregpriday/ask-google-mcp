@@ -1,6 +1,7 @@
 import {
   DEFAULT_MODEL,
   ENABLED_MODELS,
+  LEGACY_MODEL_ALIASES,
   MAX_QUESTION_LENGTH,
   MODEL_ALIASES,
   MODEL_PARAM_VALUES,
@@ -47,7 +48,7 @@ export const ASK_GOOGLE_TOOL = Object.freeze({
       model: {
         type: "string",
         description: ROUTER_AVAILABLE
-          ? `Google model. 'auto' (default, recommended) picks the right tier automatically. Override with 'pro', 'flash', or 'flash-lite' only if you need a specific one.`
+          ? `Google model. 'auto' (default, recommended) picks the right tier automatically. Override with 'flash' or 'flash-lite' only if you need a specific one.`
           : `Google model. Default: '${DEFAULT_MODEL}'.`,
         enum: MODEL_PARAM_VALUES,
         default: DEFAULT_MODEL,
@@ -138,7 +139,10 @@ export function validateAskGoogleArguments(rawArgs = {}) {
   }
 
   const question = hasQuestion ? rawArgs.question : rawArgs?.query;
-  const model = rawArgs?.model ?? DEFAULT_MODEL;
+  // Normalize legacy aliases (e.g. "pro" → "flash") before validation so older callers that
+  // still pin a removed tier keep working instead of hitting an invalid-model error.
+  const requestedModel = rawArgs?.model ?? DEFAULT_MODEL;
+  const model = LEGACY_MODEL_ALIASES[requestedModel] ?? requestedModel;
 
   if (!hasQuestion && !hasQuery) {
     throw createInvalidParamsError("Missing required parameter: question");
@@ -404,7 +408,7 @@ export function formatDiagnostics({
   const parts = [];
   const modelLabel = fellBack ? `${model} (fallback)` : model;
   if (modelLabel) {
-    // Surface routing provenance in the footer: "auto→pro" tells the caller both what they asked
+    // Surface routing provenance in the footer: "auto→flash" tells the caller both what they asked
     // for and what the router (or explicit pick) resolved to, without adding noise for the
     // common case where they pinned a specific tier.
     if (requestedModel && requestedModel !== model && requestedModel === "auto") {

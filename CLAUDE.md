@@ -71,20 +71,21 @@ The server implements a **single-tool MCP server** following the stdio transport
 ### Gemini Model Configuration
 
 **Model selection**:
-- Tool param values: `auto` (default), `pro`, `flash`, `flash-lite`. `auto` is added only when the router is available.
-- Model map: `pro` → `gemini-3.1-pro-preview`, `flash` → `gemini-3.5-flash`, `flash-lite` → `gemini-3.1-flash-lite`
+- Tool param values: `auto` (default), `flash`, `flash-lite`. `auto` is added only when the router is available.
+- Model map: `flash` → `gemini-3.5-flash`, `flash-lite` → `gemini-3.1-flash-lite`
+- Legacy alias: `pro` is no longer a real tier, but tool calls passing `model: "pro"` are normalized to `flash` (see `LEGACY_MODEL_ALIASES` in `src/config.js`) so older callers keep working. It is not advertised in the tool schema.
 - Model is configured with `systemInstruction` loaded from `src/system-prompt.txt` (cached at startup, date injected per request as ISO-8601)
 - System prompt optimized for AI-to-AI communication (terse, direct, no conversational fluff)
 
 ### Auto-routing
 
 `src/router.js` runs a tiny Flash-Lite classifier call when `model === "auto"` to pick the downstream tier before the main grounded call:
-- Uses `responseMimeType: "application/json"` + strict `responseSchema` enum (`pro | flash | flash-lite`) with `thinkingLevel: MINIMAL`
-- System prompt in `src/router-prompt.txt` — kept tight (~400 tokens) and focused on when to pick pro vs flash vs flash-lite
+- Uses `responseMimeType: "application/json"` + strict `responseSchema` enum (`flash | flash-lite`) with `thinkingLevel: MINIMAL`
+- System prompt in `src/router-prompt.txt` — kept tight and focused on the flash vs flash-lite decision boundary (flash-lite for discrete fact lookups, flash for reasoning/synthesis/code/comparisons)
 - Output is minimal: `{"model": "..."}` — one field
 - 5s timeout by default (`ASK_GOOGLE_ROUTER_TIMEOUT_MS`). Any failure (timeout, parse error, invalid pick, network) collapses to `ROUTER_FALLBACK_MODEL` (default `flash`) without throwing
-- Router decision surfaces in `diagnostics.router` and the markdown diagnostics footer (e.g., `model=auto→pro · router=0.4s`)
-- Disable with `ASK_GOOGLE_ROUTER_ENABLED=false` (DEFAULT_MODEL then falls back to `pro`)
+- Router decision surfaces in `diagnostics.router` and the markdown diagnostics footer (e.g., `model=auto→flash · router=0.4s`)
+- Disable with `ASK_GOOGLE_ROUTER_ENABLED=false` (DEFAULT_MODEL then falls back to `flash`)
 - Router is only active when its chosen model (default flash-lite) is in `ENABLED_MODELS`; otherwise `ROUTER_AVAILABLE=false` and `"auto"` collapses statically to the fallback without a network call
 
 **Search grounding** (src/index.js:238-242, 250-268):
@@ -177,11 +178,11 @@ Sources and search queries are **optional** (only included if grounding metadata
 
 ## Model Configuration
 
-The server supports three models selectable per-query via the `model` parameter:
-- `pro` (default) → `gemini-3.1-pro-preview` — Advanced reasoning with search grounding
-- `flash` → `gemini-3.5-flash` — Fast and cost-effective for simple lookups
-- `flash-lite` → `gemini-3.1-flash-lite` — Fastest and cheapest for simple factual queries
-- Model map is defined in `src/index.js` in the `modelMap` object
+The server supports two models, selectable per-query via the `model` parameter (default is `auto`, which routes between them):
+- `flash` → `gemini-3.5-flash` — More capable: reasoning, multi-source synthesis, code, comparisons, trade-off decisions
+- `flash-lite` → `gemini-3.1-flash-lite` — Fastest and cheapest for simple factual lookups
+- Legacy `pro` requests are normalized to `flash` (`LEGACY_MODEL_ALIASES` in `src/config.js`)
+- Model map is defined in `src/config.js` in the `MODEL_ALIASES` object
 
 ## Release Process
 

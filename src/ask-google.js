@@ -37,12 +37,13 @@ import {
 const SAFETY_BUFFER_MS = 2_000;
 const MIN_ATTEMPT_BUDGET_MS = 3_000;
 
-// Pick the model to use for a given attempt. If the user asked for pro and the last attempt
-// is about to run (and it's not the only attempt), swap to the fallback model so we return
-// *something* instead of timing out on pro again.
+// Pick the model to use for a given attempt. If the requested tier keeps failing and the last
+// attempt is about to run (and it's not the only attempt), swap to the fallback model (default
+// flash) so we return *something* instead of failing outright. No-op when the requested tier
+// already is the fallback.
 function selectAttemptModel({ requestedModel, attempt, totalAttempts, fallbackModel }) {
   const isLastAttempt = attempt === totalAttempts;
-  if (isLastAttempt && totalAttempts > 1 && requestedModel === "pro" && fallbackModel !== "pro") {
+  if (isLastAttempt && totalAttempts > 1 && requestedModel !== fallbackModel) {
     return { model: fallbackModel, fellBack: true };
   }
   return { model: requestedModel, fellBack: false };

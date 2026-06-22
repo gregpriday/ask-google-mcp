@@ -137,22 +137,22 @@ function createHandler(options = {}) {
   };
   const logger = options.logger || { error: () => {} };
 
-  // Default mock router returns "pro" with zero latency. Tests that don't pass an explicit model
-  // rely on this to preserve the pre-router default behavior (default model = pro). Tests that
-  // need different routing behavior inject their own `router` via options.
+  // Default mock router returns "flash" with zero latency. Tests that don't pass an explicit model
+  // rely on this for the default routed model. Tests that need different routing behavior inject
+  // their own `router` via options.
   const router =
     options.router !== undefined
       ? options.router
-      : async () => ({ model: "pro", durationMs: 0, usedFallback: false });
+      : async () => ({ model: "flash", durationMs: 0, usedFallback: false });
 
   const handler = createAskGoogleHandler({
     logger,
     systemPromptTemplate: "Current date: {{CURRENT_DATE}}",
     overallBudgetMs: options.overallBudgetMs ?? 5_000,
-    modelTimeoutsMs: options.modelTimeoutsMs ?? { pro: 1_000, flash: 500, "flash-lite": 300 },
-    modelTtftTimeoutsMs: options.modelTtftTimeoutsMs ?? { pro: 500, flash: 300, "flash-lite": 200 },
+    modelTimeoutsMs: options.modelTimeoutsMs ?? { flash: 500, "flash-lite": 300 },
+    modelTtftTimeoutsMs: options.modelTtftTimeoutsMs ?? { flash: 300, "flash-lite": 200 },
     modelInactivityTimeoutsMs:
-      options.modelInactivityTimeoutsMs ?? { pro: 500, flash: 300, "flash-lite": 200 },
+      options.modelInactivityTimeoutsMs ?? { flash: 300, "flash-lite": 200 },
     modelThinkingLevels: options.modelThinkingLevels,
     fallbackModel: options.fallbackModel ?? "flash",
     requestTimeoutMs: options.requestTimeoutMs,
@@ -193,8 +193,8 @@ describe("parseEnabledModels", () => {
   });
 
   it("parses a comma-separated list preserving first-occurrence order", () => {
-    const result = parseEnabledModels("flash, pro", VALID_MODELS);
-    assert.deepStrictEqual(result.enabled, ["flash", "pro"]);
+    const result = parseEnabledModels("flash, flash-lite", VALID_MODELS);
+    assert.deepStrictEqual(result.enabled, ["flash", "flash-lite"]);
     assert.deepStrictEqual(result.unknown, []);
   });
 
@@ -211,8 +211,8 @@ describe("parseEnabledModels", () => {
   });
 
   it("deduplicates and drops blank tokens", () => {
-    const result = parseEnabledModels("flash,,pro,flash", VALID_MODELS);
-    assert.deepStrictEqual(result.enabled, ["flash", "pro"]);
+    const result = parseEnabledModels("flash,,flash-lite,flash", VALID_MODELS);
+    assert.deepStrictEqual(result.enabled, ["flash", "flash-lite"]);
     assert.deepStrictEqual(result.unknown, []);
   });
 
@@ -259,6 +259,13 @@ describe("validateAskGoogleArguments", () => {
     });
   });
 
+  it("normalizes the legacy 'pro' alias to 'flash'", () => {
+    assert.deepStrictEqual(validateAskGoogleArguments({ question: "test", model: "pro" }), {
+      question: "test",
+      model: "flash",
+    });
+  });
+
   it("rejects providing both 'question' and 'query'", () => {
     assert.throws(
       () => validateAskGoogleArguments({ question: "a", query: "b" }),
@@ -274,8 +281,8 @@ describe("validateAskGoogleArguments", () => {
 
 describe("tool helpers", () => {
   it("maps model aliases to configured ids", () => {
-    assert.match(resolveModelId("pro"), /gemini/);
     assert.match(resolveModelId("flash"), /gemini/);
+    assert.match(resolveModelId("flash-lite"), /gemini/);
   });
 
   it("deduplicates sources and caps metadata lists", () => {
@@ -420,7 +427,7 @@ describe("tool helpers", () => {
       searches: ["q1", "q2"],
       supports: [],
       groundingStatus: "sources_only",
-      diagnostics: { model: "pro", attempts: 1, totalAttempts: 3, durationMs: 1000, ttftMs: 500 },
+      diagnostics: { model: "flash", attempts: 1, totalAttempts: 3, durationMs: 1000, ttftMs: 500 },
     });
     assert.strictEqual(sc.grounding_status, "sources_only");
     assert.strictEqual(sc.diagnostics.grounding_status, "sources_only");
@@ -450,7 +457,7 @@ describe("tool helpers", () => {
   it("renders a diagnostics footer when provided", () => {
     const text = buildToolText("answer", {
       diagnostics: {
-        model: "pro",
+        model: "flash",
         fellBack: false,
         attempts: 1,
         totalAttempts: 3,
@@ -459,7 +466,7 @@ describe("tool helpers", () => {
       },
     });
 
-    assert.match(text, /_diagnostics: model=pro · attempts=1\/3 · duration=12\.4s · ttft=4\.2s_/);
+    assert.match(text, /_diagnostics: model=flash · attempts=1\/3 · duration=12\.4s · ttft=4\.2s_/);
   });
 
   it("marks fallback in diagnostics", () => {
@@ -631,23 +638,22 @@ describe("createAskGoogleHandler", () => {
 
   it("forwards thinkingConfig when a thinking level is configured for the model", async () => {
     const { handler, createdModels } = createHandler({
-      modelThinkingLevels: { pro: "LOW", flash: undefined, "flash-lite": undefined },
+      modelThinkingLevels: { flash: undefined, "flash-lite": "LOW" },
     });
-    await handler({ question: "think light", model: "pro" });
+    await handler({ question: "think light", model: "flash-lite" });
     assert.deepStrictEqual(createdModels[0].config.thinkingConfig, { thinkingLevel: "LOW" });
   });
 
   it("omits thinkingConfig when no level is set for that model", async () => {
     const { handler, createdModels } = createHandler({
-      modelThinkingLevels: { pro: undefined, flash: undefined, "flash-lite": undefined },
+      modelThinkingLevels: { flash: undefined, "flash-lite": undefined },
     });
-    await handler({ question: "sdk default thinking", model: "pro" });
+    await handler({ question: "sdk default thinking", model: "flash" });
     assert.strictEqual(createdModels[0].config.thinkingConfig, undefined);
   });
 
-  it("defaults pro to thinkingLevel=MEDIUM at the config layer (not SDK default HIGH)", async () => {
+  it("leaves flash and flash-lite at the SDK default thinking level by default", async () => {
     const { MODEL_THINKING_LEVELS } = await import("../../src/config.js");
-    assert.strictEqual(MODEL_THINKING_LEVELS.pro, "MEDIUM");
     assert.strictEqual(MODEL_THINKING_LEVELS.flash, undefined);
     assert.strictEqual(MODEL_THINKING_LEVELS["flash-lite"], undefined);
   });
@@ -669,7 +675,7 @@ describe("createAskGoogleHandler", () => {
     assert.match(result.structuredContent.answer, /body :: structured/);
     assert.deepStrictEqual(result.structuredContent.search_queries, ["q1"]);
     assert.strictEqual(result.structuredContent.sources[0].url, "https://x.example");
-    assert.strictEqual(result.structuredContent.diagnostics.model, "pro");
+    assert.strictEqual(result.structuredContent.diagnostics.model, "flash");
     assert.strictEqual(result.structuredContent.diagnostics.search_queries_count, 1);
   });
 
@@ -761,8 +767,8 @@ describe("createAskGoogleHandler", () => {
 
   it("retries when the stream hangs past TTFT and eventually succeeds", async () => {
     const { handler, createdModels } = createHandler({
-      modelTimeoutsMs: { pro: 1_000, flash: 1_000, "flash-lite": 1_000 },
-      modelTtftTimeoutsMs: { pro: 20, flash: 20, "flash-lite": 20 },
+      modelTimeoutsMs: { flash: 1_000, "flash-lite": 1_000 },
+      modelTtftTimeoutsMs: { flash: 20, "flash-lite": 20 },
       plan: {
         script: [
           { firstChunkDelayMs: 200, chunks: ["never sent"] },
@@ -792,7 +798,7 @@ describe("createAskGoogleHandler", () => {
     assert.strictEqual(createdModels.length, 1);
   });
 
-  it("falls back to the fallback model on the last attempt when user requested pro", async () => {
+  it("falls back to the fallback model on the last attempt when the requested tier keeps failing", async () => {
     const { handler, createdModels } = createHandler({
       maxRetries: 2,
       plan: {
@@ -804,12 +810,12 @@ describe("createAskGoogleHandler", () => {
       },
     });
 
-    const result = await handler({ question: "fallback me", model: "pro" });
+    const result = await handler({ question: "fallback me", model: "flash-lite" });
     assert.match(result.content[0].text, /rescued by fallback/);
     assert.match(result.content[0].text, /model=flash \(fallback\).*attempts=3\/3/);
     assert.strictEqual(createdModels.length, 3);
-    assert.strictEqual(createdModels[0].config.model, resolveModelId("pro"));
-    assert.strictEqual(createdModels[1].config.model, resolveModelId("pro"));
+    assert.strictEqual(createdModels[0].config.model, resolveModelId("flash-lite"));
+    assert.strictEqual(createdModels[1].config.model, resolveModelId("flash-lite"));
     assert.strictEqual(createdModels[2].config.model, resolveModelId("flash"));
   });
 
@@ -836,8 +842,8 @@ describe("createAskGoogleHandler", () => {
     const { handler } = createHandler({
       overallBudgetMs: 500,
       minAttemptBudgetMs: 10,
-      modelTimeoutsMs: { pro: 30, flash: 30, "flash-lite": 30 },
-      modelTtftTimeoutsMs: { pro: 15, flash: 15, "flash-lite": 15 },
+      modelTimeoutsMs: { flash: 30, "flash-lite": 30 },
+      modelTtftTimeoutsMs: { flash: 15, "flash-lite": 15 },
       maxRetries: 1,
       plan: {
         defaultStep: { preStreamDelayMs: 500, text: "too slow" },
@@ -868,9 +874,9 @@ describe("createAskGoogleHandler", () => {
     // larger than any single inter-chunk gap, so the response should complete successfully
     // even though total time exceeds the per-chunk threshold.
     const { handler } = createHandler({
-      modelTimeoutsMs: { pro: 5_000, flash: 5_000, "flash-lite": 5_000 },
-      modelTtftTimeoutsMs: { pro: 200, flash: 200, "flash-lite": 200 },
-      modelInactivityTimeoutsMs: { pro: 100, flash: 100, "flash-lite": 100 },
+      modelTimeoutsMs: { flash: 5_000, "flash-lite": 5_000 },
+      modelTtftTimeoutsMs: { flash: 200, "flash-lite": 200 },
+      modelInactivityTimeoutsMs: { flash: 100, "flash-lite": 100 },
       plan: {
         script: [
           { chunks: ["slow ", "but ", "steady"], firstChunkDelayMs: 20, interChunkDelayMs: 50 },
@@ -884,9 +890,9 @@ describe("createAskGoogleHandler", () => {
 
   it("aborts when the stream goes silent mid-response (inactivity timeout)", async () => {
     const { handler, createdModels } = createHandler({
-      modelTimeoutsMs: { pro: 5_000, flash: 5_000, "flash-lite": 5_000 },
-      modelTtftTimeoutsMs: { pro: 200, flash: 200, "flash-lite": 200 },
-      modelInactivityTimeoutsMs: { pro: 50, flash: 50, "flash-lite": 50 },
+      modelTimeoutsMs: { flash: 5_000, "flash-lite": 5_000 },
+      modelTtftTimeoutsMs: { flash: 200, "flash-lite": 200 },
+      modelInactivityTimeoutsMs: { flash: 50, "flash-lite": 50 },
       plan: {
         script: [
           // First chunk arrives fast, but second chunk is delayed 300ms — way beyond the
@@ -923,8 +929,8 @@ describe("createAskGoogleHandler", () => {
         "progress values must strictly increase"
       );
     }
-    const attemptMsg = notifications.find((n) => /Attempt 1\/3 via pro/.test(n.message));
-    assert.ok(attemptMsg, "expected a progress notification announcing attempt 1/3 via pro");
+    const attemptMsg = notifications.find((n) => /Attempt 1\/3 via flash/.test(n.message));
+    assert.ok(attemptMsg, "expected a progress notification announcing attempt 1/3 via flash");
   });
 
   it("does not emit progress notifications when no callback is supplied", async () => {
@@ -948,7 +954,7 @@ describe("createAskGoogleHandler", () => {
     });
 
     await handler(
-      { question: "fallback notify", model: "pro" },
+      { question: "fallback notify", model: "flash-lite" },
       { notifyProgress: (p) => notifications.push(p) }
     );
 

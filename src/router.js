@@ -19,13 +19,13 @@ const ROUTER_SCHEMA = Object.freeze({
   properties: {
     model: {
       type: "STRING",
-      enum: ["pro", "flash", "flash-lite"],
+      enum: ["flash", "flash-lite"],
     },
   },
   required: ["model"],
 });
 
-const SNAP_ORDER = ["pro", "flash", "flash-lite"];
+const SNAP_ORDER = ["flash", "flash-lite"];
 
 export function buildRouterPrompt(template, now, enabledModels) {
   const date = now.toISOString().slice(0, 10);
@@ -35,7 +35,7 @@ export function buildRouterPrompt(template, now, enabledModels) {
 }
 
 // Snap a router pick to the closest enabled tier without downgrading more than necessary.
-// E.g., router said "pro" but pro is disabled → try flash, then flash-lite.
+// E.g., router said "flash-lite" but flash-lite is disabled → fall back to flash.
 function snapToEnabled(picked, enabledModels) {
   const startIdx = SNAP_ORDER.indexOf(picked);
   if (startIdx === -1) return enabledModels[0];
@@ -146,7 +146,7 @@ export function createRouter({
       }
 
       const picked = parsed?.model;
-      if (picked !== "pro" && picked !== "flash" && picked !== "flash-lite") {
+      if (picked !== "flash" && picked !== "flash-lite") {
         return safeFallback(`Router picked invalid model "${picked}"`);
       }
 

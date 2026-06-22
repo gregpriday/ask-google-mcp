@@ -49,12 +49,11 @@ describe("buildRouterPrompt", () => {
   it("substitutes CURRENT_DATE and ENABLED_MODELS", () => {
     const template = "Date: {{CURRENT_DATE}}\nModels: {{ENABLED_MODELS}}";
     const out = buildRouterPrompt(template, new Date("2026-04-23T00:00:00Z"), [
-      "pro",
       "flash",
       "flash-lite",
     ]);
     assert.match(out, /Date: 2026-04-23 \(UTC\)/);
-    assert.match(out, /Models: pro, flash, flash-lite/);
+    assert.match(out, /Models: flash, flash-lite/);
   });
 });
 
@@ -76,28 +75,28 @@ describe("createRouter", () => {
   });
 
   it("picks the model returned by the classifier", async () => {
-    const client = makeMockClient({ respond: { model: "pro" } });
+    const client = makeMockClient({ respond: { model: "flash" } });
     const route = createRouter({
       getClient: () => client,
       routerModelAlias: "flash-lite",
-      enabledModels: ["pro", "flash", "flash-lite"],
+      enabledModels: ["flash", "flash-lite"],
       timeoutMs: 1_000,
       fallbackModel: "flash",
       now: NOW,
     });
 
     const result = await route("Should I migrate to Postgres?");
-    assert.strictEqual(result.model, "pro");
+    assert.strictEqual(result.model, "flash");
     assert.strictEqual(result.usedFallback, false);
     assert.ok(result.durationMs >= 0);
   });
 
   it("falls back to flash when the router times out", async () => {
-    const client = makeMockClient({ respond: { model: "pro" }, delayMs: 200 });
+    const client = makeMockClient({ respond: { model: "flash" }, delayMs: 200 });
     const route = createRouter({
       getClient: () => client,
       routerModelAlias: "flash-lite",
-      enabledModels: ["pro", "flash", "flash-lite"],
+      enabledModels: ["flash", "flash-lite"],
       timeoutMs: 20,
       fallbackModel: "flash",
       now: NOW,
@@ -114,7 +113,7 @@ describe("createRouter", () => {
     const route = createRouter({
       getClient: () => client,
       routerModelAlias: "flash-lite",
-      enabledModels: ["pro", "flash", "flash-lite"],
+      enabledModels: ["flash", "flash-lite"],
       timeoutMs: 1_000,
       fallbackModel: "flash",
       now: NOW,
@@ -131,7 +130,7 @@ describe("createRouter", () => {
     const route = createRouter({
       getClient: () => client,
       routerModelAlias: "flash-lite",
-      enabledModels: ["pro", "flash", "flash-lite"],
+      enabledModels: ["flash", "flash-lite"],
       timeoutMs: 1_000,
       fallbackModel: "flash",
       now: NOW,
@@ -147,7 +146,7 @@ describe("createRouter", () => {
     const route = createRouter({
       getClient: () => client,
       routerModelAlias: "flash-lite",
-      enabledModels: ["pro", "flash", "flash-lite"],
+      enabledModels: ["flash", "flash-lite"],
       timeoutMs: 1_000,
       fallbackModel: "flash",
       now: NOW,
@@ -163,7 +162,7 @@ describe("createRouter", () => {
     const route = createRouter({
       getClient: () => client,
       routerModelAlias: "flash-lite",
-      enabledModels: ["pro", "flash", "flash-lite"],
+      enabledModels: ["flash", "flash-lite"],
       timeoutMs: 1_000,
       fallbackModel: "flash",
       now: NOW,
@@ -175,19 +174,19 @@ describe("createRouter", () => {
   });
 
   it("snaps a valid pick to an enabled tier when the picked model is disabled", async () => {
-    const client = makeMockClient({ respond: { model: "pro" } });
+    const client = makeMockClient({ respond: { model: "flash-lite" } });
     const route = createRouter({
       getClient: () => client,
       routerModelAlias: "flash",
-      enabledModels: ["flash", "flash-lite"], // pro disabled
+      enabledModels: ["flash"], // flash-lite disabled
       timeoutMs: 1_000,
       fallbackModel: "flash",
       now: NOW,
     });
 
     const result = await route("anything");
-    assert.strictEqual(result.model, "flash"); // snapped down from pro → flash
-    assert.strictEqual(result.snappedFrom, "pro");
+    assert.strictEqual(result.model, "flash"); // snapped from flash-lite → flash
+    assert.strictEqual(result.snappedFrom, "flash-lite");
     assert.strictEqual(result.usedFallback, false);
   });
 
@@ -206,7 +205,7 @@ describe("createRouter", () => {
     const route = createRouter({
       getClient: () => client,
       routerModelAlias: "flash-lite",
-      enabledModels: ["pro", "flash", "flash-lite"],
+      enabledModels: ["flash", "flash-lite"],
       timeoutMs: 1_000,
       fallbackModel: "flash",
       now: NOW,
@@ -215,7 +214,7 @@ describe("createRouter", () => {
 
     await route("latest node?");
     assert.match(captured.config.systemInstruction, /date=2026-04-23 \(UTC\)/);
-    assert.match(captured.config.systemInstruction, /models=pro, flash, flash-lite/);
+    assert.match(captured.config.systemInstruction, /models=flash, flash-lite/);
     assert.strictEqual(captured.config.responseMimeType, "application/json");
     assert.deepStrictEqual(captured.config.thinkingConfig, { thinkingLevel: "MINIMAL" });
   });
@@ -249,9 +248,9 @@ describe("createAskGoogleHandler with router", () => {
       logger: { error: () => {} },
       systemPromptTemplate: "Current date: {{CURRENT_DATE}}",
       overallBudgetMs: 5_000,
-      modelTimeoutsMs: { pro: 1_000, flash: 500, "flash-lite": 300 },
-      modelTtftTimeoutsMs: { pro: 500, flash: 300, "flash-lite": 200 },
-      modelInactivityTimeoutsMs: { pro: 500, flash: 300, "flash-lite": 200 },
+      modelTimeoutsMs: { flash: 500, "flash-lite": 300 },
+      modelTtftTimeoutsMs: { flash: 300, "flash-lite": 200 },
+      modelInactivityTimeoutsMs: { flash: 300, "flash-lite": 200 },
       maxRetries: 0,
       initialRetryDelayMs: 1,
       getApiKey: () => "test-key",
@@ -270,7 +269,7 @@ describe("createAskGoogleHandler with router", () => {
       router: async (question) => {
         routerCalls += 1;
         assert.strictEqual(question, "should I migrate to Postgres?");
-        return { model: "pro", durationMs: 42, usedFallback: false };
+        return { model: "flash", durationMs: 42, usedFallback: false };
       },
     });
 
@@ -280,12 +279,12 @@ describe("createAskGoogleHandler with router", () => {
     });
 
     assert.strictEqual(routerCalls, 1);
-    assert.match(createdModels[0].config.model, /pro/);
+    assert.match(createdModels[0].config.model, /flash/);
     assert.strictEqual(result.structuredContent.diagnostics.requested_model, "auto");
-    assert.strictEqual(result.structuredContent.diagnostics.model, "pro");
-    assert.strictEqual(result.structuredContent.diagnostics.router.picked_model, "pro");
+    assert.strictEqual(result.structuredContent.diagnostics.model, "flash");
+    assert.strictEqual(result.structuredContent.diagnostics.router.picked_model, "flash");
     assert.strictEqual(result.structuredContent.diagnostics.router.used_fallback, false);
-    assert.match(result.content[0].text, /model=auto→pro/);
+    assert.match(result.content[0].text, /model=auto→flash/);
   });
 
   it("skips the router when the caller pins an explicit model", async () => {
@@ -293,7 +292,7 @@ describe("createAskGoogleHandler with router", () => {
     const { handler, createdModels } = createHandler({
       router: async () => {
         routerCalls += 1;
-        return { model: "pro", durationMs: 0, usedFallback: false };
+        return { model: "flash-lite", durationMs: 0, usedFallback: false };
       },
     });
 
@@ -336,7 +335,7 @@ describe("createAskGoogleHandler with router", () => {
   it("emits a progress notification announcing the routing decision", async () => {
     const notifications = [];
     const { handler } = createHandler({
-      router: async () => ({ model: "pro", durationMs: 7, usedFallback: false }),
+      router: async () => ({ model: "flash", durationMs: 7, usedFallback: false }),
     });
 
     await handler(
@@ -344,8 +343,8 @@ describe("createAskGoogleHandler with router", () => {
       { notifyProgress: (p) => notifications.push(p) }
     );
 
-    const routingMsg = notifications.find((n) => /Routed to pro/.test(n.message));
-    assert.ok(routingMsg, "expected a 'Routed to pro' progress notification");
+    const routingMsg = notifications.find((n) => /Routed to flash/.test(n.message));
+    assert.ok(routingMsg, "expected a 'Routed to flash' progress notification");
   });
 
   it("subtracts router latency from the overall budget passed to retryWithBackoff", async () => {
@@ -371,9 +370,9 @@ describe("createAskGoogleHandler with router", () => {
       logger: { error: () => {} },
       systemPromptTemplate: "Current date: {{CURRENT_DATE}}",
       overallBudgetMs: 200,
-      modelTimeoutsMs: { pro: 1_000, flash: 1_000, "flash-lite": 1_000 },
-      modelTtftTimeoutsMs: { pro: 500, flash: 500, "flash-lite": 500 },
-      modelInactivityTimeoutsMs: { pro: 500, flash: 500, "flash-lite": 500 },
+      modelTimeoutsMs: { flash: 1_000, "flash-lite": 1_000 },
+      modelTtftTimeoutsMs: { flash: 500, "flash-lite": 500 },
+      modelInactivityTimeoutsMs: { flash: 500, "flash-lite": 500 },
       minAttemptBudgetMs: 50,
       maxRetries: 0,
       initialRetryDelayMs: 1,
