@@ -83,7 +83,7 @@ The server implements a **single-tool MCP server** following the stdio transport
 - Uses `responseMimeType: "application/json"` + strict `responseSchema` enum (`flash | flash-lite`) with `thinkingLevel: MINIMAL`
 - System prompt in `src/router-prompt.txt` — kept tight and focused on the flash vs flash-lite decision boundary (flash-lite for discrete fact lookups, flash for reasoning/synthesis/code/comparisons)
 - Output is minimal: `{"model": "..."}` — one field
-- 5s timeout by default (`ASK_GOOGLE_ROUTER_TIMEOUT_MS`). Any failure (timeout, parse error, invalid pick, network) collapses to `ROUTER_FALLBACK_MODEL` (default `flash`) without throwing
+- 10s timeout by default (`ASK_GOOGLE_ROUTER_TIMEOUT_MS`). Any failure (timeout, parse error, invalid pick, network) collapses to `ROUTER_FALLBACK_MODEL` (default `flash`) without throwing
 - Router decision surfaces in `diagnostics.router` and the markdown diagnostics footer (e.g., `model=auto→flash · router=0.4s`)
 - Disable with `ASK_GOOGLE_ROUTER_ENABLED=false` (DEFAULT_MODEL then falls back to `flash`)
 - Router is only active when its chosen model (default flash-lite) is in `ENABLED_MODELS`; otherwise `ROUTER_AVAILABLE=false` and `"auto"` collapses statically to the fallback without a network call

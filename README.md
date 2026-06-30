@@ -109,7 +109,7 @@ ASK_GOOGLE_INITIAL_RETRY_DELAY_MS=1000
 # Auto-routing (on by default)
 # ASK_GOOGLE_ROUTER_ENABLED=true
 # ASK_GOOGLE_ROUTER_MODEL=flash-lite
-# ASK_GOOGLE_ROUTER_TIMEOUT_MS=5000
+# ASK_GOOGLE_ROUTER_TIMEOUT_MS=10000
 # ASK_GOOGLE_ROUTER_FALLBACK_MODEL=flash
 
 # Optional model alias overrides
@@ -150,7 +150,7 @@ When `model` is `auto` (the default), the server runs a tiny classifier call on 
 - **flash-lite** — simple lookups, single facts, current versions, API signatures, math, trivia
 - **flash** — research briefs, multi-source synthesis, comparisons, reasoned trade-off/migration decisions, code generation needing current syntax, "what changed in X" questions
 
-The router has a tight timeout (5s by default) and strict JSON enum output. If it times out, fails, or returns something unusable, the server falls back to `flash` (configurable via `ASK_GOOGLE_ROUTER_FALLBACK_MODEL`) and proceeds with the normal grounded call.
+The router has a tight timeout (10s by default) and strict JSON enum output. If it times out, fails, or returns something unusable, the server falls back to `flash` (configurable via `ASK_GOOGLE_ROUTER_FALLBACK_MODEL`) and proceeds with the normal grounded call.
 
 You can still pin a specific model (`flash`, `flash-lite`) to bypass the router. To disable auto-routing entirely and restore the old default-model behavior, set `ASK_GOOGLE_ROUTER_ENABLED=false`.
 

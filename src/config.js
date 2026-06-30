@@ -123,7 +123,7 @@ export const ROUTER_MODEL_ALIAS = (() => {
 
 export const ROUTER_TIMEOUT_MS = parsePositiveInteger(
   process.env.ASK_GOOGLE_ROUTER_TIMEOUT_MS,
-  5_000
+  10_000
 );
 
 // When the router times out, errors, or returns bad output, we collapse to this model.
@@ -211,36 +211,36 @@ export const INITIAL_RETRY_DELAY_MS = parsePositiveInteger(
 // it will cut us off before late retries or the flash fallback can complete.
 export const OVERALL_BUDGET_MS = parsePositiveInteger(
   process.env.ASK_GOOGLE_OVERALL_BUDGET_MS,
-  300_000
+  420_000
 );
 
 // Per-model HARD CEILING — absolute safety net on a single attempt. This only fires if Gemini
 // pathologically drip-feeds tokens; the inactivity timeout should catch real stalls long before.
 // Actual value is min of this, remaining budget, and any requestTimeoutMs override.
 export const MODEL_TIMEOUTS_MS = Object.freeze({
-  flash: parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_FLASH_MS, 60_000),
-  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_FLASH_LITE_MS, 30_000),
+  flash: parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_FLASH_MS, 120_000),
+  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_TIMEOUT_FLASH_LITE_MS, 60_000),
 });
 
 // Per-model TIME-TO-FIRST-TOKEN cutoff. If no chunk arrives in this window, the stream is
 // hung before any output — abort and retry.
 export const MODEL_TTFT_TIMEOUTS_MS = Object.freeze({
-  flash: parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_FLASH_MS, 10_000),
-  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_FLASH_LITE_MS, 12_000),
+  flash: parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_FLASH_MS, 30_000),
+  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_TTFT_FLASH_LITE_MS, 20_000),
 });
 
 // Per-model INTER-CHUNK INACTIVITY timeout. Once streaming has started, this resets with every
 // chunk received. If no new chunk arrives within this window, the stream is considered stalled.
 export const MODEL_INACTIVITY_TIMEOUTS_MS = Object.freeze({
-  flash: parsePositiveInteger(process.env.ASK_GOOGLE_INACTIVITY_FLASH_MS, 15_000),
-  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_INACTIVITY_FLASH_LITE_MS, 10_000),
+  flash: parsePositiveInteger(process.env.ASK_GOOGLE_INACTIVITY_FLASH_MS, 25_000),
+  "flash-lite": parsePositiveInteger(process.env.ASK_GOOGLE_INACTIVITY_FLASH_LITE_MS, 15_000),
 });
 
 // Kept for backward compatibility with callers that want a single generic timeout
 // (tests and overrides). Actual per-attempt timeout is resolved per-model.
 export const REQUEST_TIMEOUT_MS = parsePositiveInteger(
   process.env.ASK_GOOGLE_TIMEOUT_MS,
-  60_000
+  120_000
 );
 
 // If the user requested a tier and attempts 1/2 failed, the final attempt falls back to this
